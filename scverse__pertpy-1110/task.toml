@@ -34,6 +34,7 @@ context_files = [
     "src/pertpy/tools/_milo_glmm.py",
     "tests/tools/test_milo.py",
 ]
+bootstrap_image = "python:3.12-slim"
 
 [metadata.repo2env.reward_calibration]
 baseline_reward = 0.0
@@ -52,10 +53,15 @@ provenance = "unknown"
 evidence = []
 
 [metadata.repo2env.reproducibility]
-mode = "local_only"
+mode = "inline_dockerfile"
 image_ref = "python:3.12-slim"
 image_tag = "python:3.12-slim"
-image_visibility = "private"
+image_visibility = "public"
+pushed_at = "2026-11-16T15:52:56.705171+00:00"
+pushed_by = "scalingX"
+inline_recipe_sha256 = "sha256:550448404944d3badc403717cfc978fa994db7c7b06072e193c808884f84f99c"
+inline_recipe_lines = 37
+inline_recipe_source = "user_dockerfile"
 
 [agent]
 timeout_sec = 1800.0

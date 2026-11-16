@@ -35,6 +35,7 @@ context_files = [
     "pertpy/tools/_scgen/_scgen.py",
     "pertpy/tools/_scgen/_scgenvae.py",
 ]
+bootstrap_image = "python:3.12-slim"
 
 [metadata.repo2env.reward_calibration]
 baseline_reward = 0.0
@@ -53,10 +54,15 @@ provenance = "unknown"
 evidence = []
 
 [metadata.repo2env.reproducibility]
-mode = "local_only"
+mode = "inline_dockerfile"
 image_ref = "python:3.12-slim"
 image_tag = "python:3.12-slim"
-image_visibility = "private"
+image_visibility = "public"
+pushed_at = "2026-11-16T15:52:56.687490+00:00"
+pushed_by = "scalingX"
+inline_recipe_sha256 = "sha256:ce74443fb7df2adf6c8b447b99aa5b7cb68422e774b6e670bdf3b0ad11362e10"
+inline_recipe_lines = 37
+inline_recipe_source = "user_dockerfile"
 
 [agent]
 timeout_sec = 1800.0

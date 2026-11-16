@@ -35,6 +35,7 @@ context_files = [
     "tests/test_CodonData.py",
     "tests/test_CodonUtils.py",
 ]
+bootstrap_image = "python:3.12-slim"
 
 [metadata.repo2env.reward_calibration]
 baseline_reward = 0.0
@@ -53,10 +54,15 @@ provenance = "unknown"
 evidence = []
 
 [metadata.repo2env.reproducibility]
-mode = "local_only"
+mode = "inline_dockerfile"
 image_ref = "python:3.12-slim"
 image_tag = "python:3.12-slim"
-image_visibility = "private"
+image_visibility = "public"
+pushed_at = "2026-11-16T15:52:56.671099+00:00"
+pushed_by = "scalingX"
+inline_recipe_sha256 = "sha256:60c8a8b521c52466cb91487ee8c0f3e6a7449a6497b80b091b50b899be97e242"
+inline_recipe_lines = 37
+inline_recipe_source = "user_dockerfile"
 
 [agent]
 timeout_sec = 1800.0

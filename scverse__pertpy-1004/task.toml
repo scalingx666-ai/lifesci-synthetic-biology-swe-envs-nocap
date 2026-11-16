@@ -33,6 +33,7 @@ context_files = [
     "docs/_static/docstring_previews/de_disp_ests.png",
     "pertpy/tools/_differential_gene_expression/_pydeseq2.py",
 ]
+bootstrap_image = "python:3.12-slim"
 
 [metadata.repo2env.reward_calibration]
 baseline_reward = 0.0
@@ -51,10 +52,15 @@ provenance = "unknown"
 evidence = []
 
 [metadata.repo2env.reproducibility]
-mode = "local_only"
+mode = "inline_dockerfile"
 image_ref = "python:3.12-slim"
 image_tag = "python:3.12-slim"
-image_visibility = "private"
+image_visibility = "public"
+pushed_at = "2026-11-16T15:52:56.678508+00:00"
+pushed_by = "scalingX"
+inline_recipe_sha256 = "sha256:5a65703a7324cf2d1462b37c8eb19e169654b9a044555881f6f238de30444a0e"
+inline_recipe_lines = 37
+inline_recipe_source = "user_dockerfile"
 
 [agent]
 timeout_sec = 1800.0

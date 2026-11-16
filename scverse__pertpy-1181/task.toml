@@ -33,6 +33,7 @@ context_files = [
     "docs/changelog.md",
     "src/pertpy/tools/_milo.py",
 ]
+bootstrap_image = "python:3.12-slim"
 
 [metadata.repo2env.reward_calibration]
 baseline_reward = 0.0
@@ -51,10 +52,15 @@ provenance = "unknown"
 evidence = []
 
 [metadata.repo2env.reproducibility]
-mode = "local_only"
+mode = "inline_dockerfile"
 image_ref = "python:3.12-slim"
 image_tag = "python:3.12-slim"
-image_visibility = "private"
+image_visibility = "public"
+pushed_at = "2026-11-16T15:52:56.729360+00:00"
+pushed_by = "scalingX"
+inline_recipe_sha256 = "sha256:157acb7b0cbf6d580de8eb325a0c450a70abfe1d7d3c67c69c47bf3181cb0e65"
+inline_recipe_lines = 37
+inline_recipe_source = "user_dockerfile"
 
 [agent]
 timeout_sec = 1800.0

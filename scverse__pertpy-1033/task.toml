@@ -32,6 +32,7 @@ diff_format = "unified"
 context_files = [
     ".pre-commit-config.yaml",
 ]
+bootstrap_image = "python:3.12-slim"
 
 [metadata.repo2env.reward_calibration]
 baseline_reward = 0.0
@@ -50,10 +51,15 @@ provenance = "unknown"
 evidence = []
 
 [metadata.repo2env.reproducibility]
-mode = "local_only"
+mode = "inline_dockerfile"
 image_ref = "python:3.12-slim"
 image_tag = "python:3.12-slim"
-image_visibility = "private"
+image_visibility = "public"
+pushed_at = "2026-11-16T15:52:56.686555+00:00"
+pushed_by = "scalingX"
+inline_recipe_sha256 = "sha256:a434395b536e26a5610f1b60dcfa3240f8436971f3ba6d4c1c74eb56abeff7e9"
+inline_recipe_lines = 37
+inline_recipe_source = "user_dockerfile"
 
 [agent]
 timeout_sec = 1800.0

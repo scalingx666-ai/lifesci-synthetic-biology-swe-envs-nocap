@@ -38,6 +38,7 @@ context_files = [
     "pertpy/tools/_dialogue.py",
     "tests/tools/test_dialogue.py",
 ]
+bootstrap_image = "python:3.12-slim"
 
 [metadata.repo2env.reward_calibration]
 baseline_reward = 0.0
@@ -56,10 +57,15 @@ provenance = "unknown"
 evidence = []
 
 [metadata.repo2env.reproducibility]
-mode = "local_only"
+mode = "inline_dockerfile"
 image_ref = "python:3.12-slim"
 image_tag = "python:3.12-slim"
-image_visibility = "private"
+image_visibility = "public"
+pushed_at = "2026-11-16T15:52:56.749627+00:00"
+pushed_by = "scalingX"
+inline_recipe_sha256 = "sha256:ae4770f48a4a6c4d752fb5d2c13f25a369cd5b144544a7144cda2d02f5308a75"
+inline_recipe_lines = 37
+inline_recipe_source = "user_dockerfile"
 
 [agent]
 timeout_sec = 1800.0
