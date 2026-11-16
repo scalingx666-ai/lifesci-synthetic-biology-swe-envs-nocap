@@ -1,0 +1,154 @@
+diff --git a/.pre-commit-config.yaml b/.pre-commit-config.yaml
+index 705dc334..04a6d5d2 100644
+--- a/.pre-commit-config.yaml
++++ b/.pre-commit-config.yaml
+@@ -9,12 +9,12 @@ default_stages:
+ minimum_pre_commit_version: 2.16.0
+ repos:
+     - repo: https://github.com/biomejs/pre-commit
+-      rev: 06894e75c7c22ab408daf8e1ad00c2fe81512f08 # frozen: v2.5.5
++      rev: cd5d6ed44598e228e214b704d673541d9675f8e4 # frozen: v2.5.6
+       hooks:
+           - id: biome-format
+             exclude: ^\.cruft\.json$ # inconsistent indentation with cruft - file never to be modified manually.
+     - repo: https://github.com/astral-sh/ruff-pre-commit
+-      rev: cb8c523fd4835aba42af70f4cad5568db4df0b6c # frozen: v0.16.0
++      rev: 39d9ac5938dadb73df0564a45f163e25ff9fa6e2 # frozen: v0.16.1
+       hooks:
+           - id: ruff-check
+             args: [--fix, --exit-non-zero-on-fix, --unsafe-fixes]
+@@ -44,7 +44,7 @@ repos:
+             require_serial: true
+             pass_filenames: false
+     - repo: https://github.com/zizmorcore/zizmor-pre-commit
+-      rev: 067260dc5fe6ea86b7551bfd6f8b3ba4e6c93129 # frozen: v1.28.0
++      rev: 451b56af716f9f0d0c2b816503a3fd0cf8b036fa # frozen: v1.29.0
+       hooks:
+           - id: zizmor
+             args: [--no-progress, --fix]
+diff --git a/src/pertpy/tools/_coda/_base_coda.py b/src/pertpy/tools/_coda/_base_coda.py
+index 76bde8b5..2c894b46 100644
+--- a/src/pertpy/tools/_coda/_base_coda.py
++++ b/src/pertpy/tools/_coda/_base_coda.py
+@@ -761,8 +761,8 @@ def __complete_beta_df(
+         # Effect processing for different models
+         # Classic scCODA (spike-and-slab + no tree aggregation)
+         if model_type == "classic" and select_type == "spikeslab":
+-            beta_inc_prob = []
+-            beta_nonzero_mean = []
++            beta_inc_prob: list[float] = []
++            beta_nonzero_mean: list[float] = []
+ 
+             # Get MCMC samples for parameter "beta"
+             beta_raw = np.array(sample_adata.uns["scCODA_params"]["mcmc"]["samples"]["beta"])
+diff --git a/src/pertpy/tools/_differential_gene_expression/_base.py b/src/pertpy/tools/_differential_gene_expression/_base.py
+index ba0b70ce..e46b830d 100644
+--- a/src/pertpy/tools/_differential_gene_expression/_base.py
++++ b/src/pertpy/tools/_differential_gene_expression/_base.py
+@@ -144,12 +144,9 @@ def compare_groups(
+         ...
+ 
+     @_doc_params(common_plot_args=doc_common_plot_args)
+-    @deprecated_arg(
+-        "pval_thresh",
+-        cast("Deprecation", Deprecation("1.1.0", "Use `padj_threshold`.")),
+-    )
+-    @deprecated_arg("pvalue_col", cast("Deprecation", Deprecation("1.1.0", "Use `padj_col`.")), stacklevel=2)
+-    @deprecated_arg("log2fc_thresh", cast("Deprecation", Deprecation("1.1.0", "Use `log2fc_threshold`.")), stacklevel=3)
++    @deprecated_arg("pval_thresh", Deprecation("1.1.0", "Use `padj_threshold`."))
++    @deprecated_arg("pvalue_col", Deprecation("1.1.0", "Use `padj_col`."), stacklevel=2)
++    @deprecated_arg("log2fc_thresh", Deprecation("1.1.0", "Use `log2fc_threshold`."), stacklevel=3)
+     def plot_volcano(  # pragma: no cover # noqa: D417
+         self,
+         data: pd.DataFrame | ad.AnnData,
+diff --git a/src/pertpy/tools/_distances/_distance_tests.py b/src/pertpy/tools/_distances/_distance_tests.py
+index 89183f07..5d3df45b 100644
+--- a/src/pertpy/tools/_distances/_distance_tests.py
++++ b/src/pertpy/tools/_distances/_distance_tests.py
+@@ -1,6 +1,6 @@
+ from __future__ import annotations
+ 
+-from typing import TYPE_CHECKING, cast
++from typing import TYPE_CHECKING
+ 
+ import numpy as np
+ import pandas as pd
+@@ -47,7 +47,7 @@ class DistanceTest:
+ 
+     @deprecated_arg(  # type: ignore[misc]
+         "alpha",
+-        cast("Deprecation", Deprecation("1.1.2", "Use `padj_threshold`.")),
++        Deprecation("1.1.2", "Use `padj_threshold`."),
+     )
+     def __init__(
+         self,
+diff --git a/src/pertpy/tools/_enrichment.py b/src/pertpy/tools/_enrichment.py
+index d6de015c..4e10dd16 100644
+--- a/src/pertpy/tools/_enrichment.py
++++ b/src/pertpy/tools/_enrichment.py
+@@ -1,6 +1,6 @@
+ from collections import ChainMap
+ from collections.abc import Mapping, Sequence
+-from typing import Any, Literal, cast
++from typing import Any, Literal
+ 
+ import blitzgsea
+ import matplotlib.pyplot as plt
+@@ -154,7 +154,7 @@ def score(
+ 
+     @deprecated_arg(
+         "pvals_adj_thresh",
+-        cast("Deprecation", Deprecation("1.0.6", "Use `padj_threshold`.")),
++        Deprecation("1.0.6", "Use `padj_threshold`."),
+     )
+     def hypergeometric(
+         self,
+diff --git a/src/pertpy/tools/_milo.py b/src/pertpy/tools/_milo.py
+index 45550b18..9be9a74f 100644
+--- a/src/pertpy/tools/_milo.py
++++ b/src/pertpy/tools/_milo.py
+@@ -5,7 +5,7 @@
+ import random
+ import re
+ from importlib.util import find_spec
+-from typing import TYPE_CHECKING, Any, Literal, Optional, cast
++from typing import TYPE_CHECKING, Any, Literal, Optional
+ 
+ import matplotlib.pyplot as plt
+ import numpy as np
+@@ -291,13 +291,10 @@ def count_nhoods(
+ 
+     @deprecated_arg(
+         "subset_samples",
+-        cast(
+-            "Deprecation",
+-            Deprecation(
+-                "1.1.0",
+-                "subset_samples is buggy in edge cases and will be removed. "
+-                "Specify the comparison via `model_contrasts` instead, or subset cells before building the kNN graph.",
+-            ),
++        Deprecation(
++            "1.1.0",
++            "subset_samples is buggy in edge cases and will be removed. "
++            "Specify the comparison via `model_contrasts` instead, or subset cells before building the kNN graph.",
+         ),
+     )
+     def da_nhoods(
+@@ -1169,7 +1166,7 @@ def _graph_spatial_fdr(
+     @_doc_params(common_plot_args=doc_common_plot_args)
+     @deprecated_arg(
+         "alpha",
+-        cast("Deprecation", Deprecation("1.1.0", "Use `padj_threshold`.")),
++        Deprecation("1.1.0", "Use `padj_threshold`."),
+     )
+     def plot_nhood_graph(  # pragma: no cover # noqa: D417
+         self,
+@@ -1519,7 +1516,7 @@ def plot_nhood(  # pragma: no cover # noqa: D417
+     @_doc_params(common_plot_args=doc_common_plot_args)
+     @deprecated_arg(
+         "alpha",
+-        cast("Deprecation", Deprecation("1.1.0", "Use `padj_threshold`.")),
++        Deprecation("1.1.0", "Use `padj_threshold`."),
+     )
+     def plot_da_beeswarm(  # pragma: no cover # noqa: D417
+         self,

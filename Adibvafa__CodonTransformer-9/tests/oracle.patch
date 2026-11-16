@@ -1,0 +1,328 @@
+diff --git a/CodonTransformer/CodonData.py b/CodonTransformer/CodonData.py
+index 9eea9e9..a40f6f6 100644
+--- a/CodonTransformer/CodonData.py
++++ b/CodonTransformer/CodonData.py
+@@ -7,6 +7,7 @@
+ 
+ import json
+ import os
++import random
+ from typing import Dict, List, Optional, Tuple, Union
+ 
+ import pandas as pd
+@@ -25,6 +26,7 @@
+     STOP_CODONS,
+     STOP_SYMBOL,
+     STOP_SYMBOLS,
++    ProteinConfig,
+     find_pattern_in_fasta,
+     get_taxonomy_id,
+     sort_amino2codon_skeleton,
+@@ -162,7 +164,7 @@ def preprocess_protein_sequence(protein: str) -> str:
+         str: The preprocessed protein sequence.
+ 
+     Raises:
+-        ValueError: If the protein sequence is invalid.
++        ValueError: If the protein sequence is invalid or if the configuration is invalid.
+     """
+     if not protein:
+         raise ValueError("Protein sequence is empty.")
+@@ -172,10 +174,28 @@ def preprocess_protein_sequence(protein: str) -> str:
+         protein.upper().strip().replace("\n", "").replace(" ", "").replace("\t", "")
+     )
+ 
+-    # Replace ambiguous amino acids with standard 20 amino acids
+-    protein = "".join(
+-        AMBIGUOUS_AMINOACID_MAP.get(aminoacid, aminoacid) for aminoacid in protein
+-    )
++    # Handle ambiguous amino acids based on the specified behavior
++    config = ProteinConfig()
++    ambiguous_aminoacid_map_override = config.get('ambiguous_aminoacid_map_override')
++    ambiguous_aminoacid_behavior = config.get('ambiguous_aminoacid_behavior')
++    ambiguous_aminoacid_map = AMBIGUOUS_AMINOACID_MAP.copy()
++    
++    for aminoacid, standard_aminoacids in ambiguous_aminoacid_map_override.items():
++        ambiguous_aminoacid_map[aminoacid] = standard_aminoacids
++
++    if ambiguous_aminoacid_behavior == 'raise_error':
++        if any(aminoacid in ambiguous_aminoacid_map for aminoacid in protein):
++            raise ValueError("Ambiguous amino acids found in protein sequence.")
++    elif ambiguous_aminoacid_behavior == 'standardize_deterministic':
++        protein = "".join(
++            ambiguous_aminoacid_map.get(aminoacid, [aminoacid])[0] for aminoacid in protein
++        )
++    elif ambiguous_aminoacid_behavior == 'standardize_random':
++        protein = "".join(
++            random.choice(ambiguous_aminoacid_map.get(aminoacid, [aminoacid])) for aminoacid in protein
++        )
++    else:
++        raise ValueError(f"Invalid ambiguous_aminoacid_behavior: {ambiguous_aminoacid_behavior}.")
+ 
+     # Check for sequence validity
+     if any(aminoacid not in AMINO_ACIDS + STOP_SYMBOLS for aminoacid in protein):
+diff --git a/CodonTransformer/CodonUtils.py b/CodonTransformer/CodonUtils.py
+index 84d8bea..349a26d 100644
+--- a/CodonTransformer/CodonUtils.py
++++ b/CodonTransformer/CodonUtils.py
+@@ -8,6 +8,7 @@
+ import os
+ import pickle
+ import re
++from abc import ABC, abstractmethod
+ from dataclasses import dataclass
+ from typing import Any, Dict, Iterator, List, Optional, Tuple
+ 
+@@ -41,13 +42,13 @@
+ STOP_SYMBOLS = ["_", "*"]  # Stop codon symbols
+ 
+ # Dictionary ambiguous amino acids to standard amino acids
+-AMBIGUOUS_AMINOACID_MAP: Dict[str, str] = {
+-    "B": "N",  # Aspartic acid (D) or Asparagine (N)
+-    "Z": "Q",  # Glutamic acid (E) or Glutamine (Q)
+-    "X": "A",  # Any amino acid (typically replaced with Alanine)
+-    "J": "L",  # Leucine (L) or Isoleucine (I)
+-    "U": "C",  # Selenocysteine (typically replaced with Cysteine)
+-    "O": "K",  # Pyrrolysine (typically replaced with Lysine)
++AMBIGUOUS_AMINOACID_MAP: Dict[str, list[str]] = {
++    "B": ["N", "D"],  # Asparagine (N) or Aspartic acid (D)
++    "Z": ["Q", "E"],  # Glutamine (Q) or Glutamic acid (E)
++    "X": ["A"],  # Any amino acid (typically replaced with Alanine)
++    "J": ["L", "I"],  # Leucine (L) or Isoleucine (I)
++    "U": ["C"],  # Selenocysteine (typically replaced with Cysteine)
++    "O": ["K"],  # Pyrrolysine (typically replaced with Lysine)
+ }
+ 
+ # List of all possible start and stop codons
+@@ -545,6 +546,129 @@ def __init__(self, data_path: str, train: bool = True, **kwargs):
+         self.train = train
+ 
+ 
++class ConfigManager(ABC):
++    """
++    Abstract base class for managing configuration settings.
++    """
++    def __enter__(self):
++        return self
++    
++    def __exit__(self, exc_type, exc_value, traceback):
++        if exc_type is not None:
++            print(f"Exception occurred: {exc_type}, {exc_value}, {traceback}")
++        self.reset_config()
++    
++    @abstractmethod
++    def reset_config(self) -> None:
++        """Reset the configuration to default values."""
++        pass
++
++    def get(self, key: str) -> Any:
++        """
++        Get the value of a configuration key.
++
++        Args:
++            key (str): The key to retrieve the value for.
++
++        Returns:
++            Any: The value of the configuration key.
++        """
++        return self._config.get(key)
++
++    def set(self, key: str, value: Any) -> None:
++        """
++        Set the value of a configuration key.
++
++        Args:
++            key (str): The key to set the value for.
++            value (Any): The value to set for the key.
++        """
++        self.validate_inputs(key, value)
++        self._config[key] = value
++
++    def update(self, config_dict: dict) -> None:
++        """
++        Update the configuration with a dictionary of key-value pairs after validating them.
++
++        Args:
++            config_dict (dict): A dictionary of key-value pairs to update the configuration.
++        """
++        for key, value in config_dict.items():
++            self.validate_inputs(key, value)
++        self._config.update(config_dict)
++
++    @abstractmethod
++    def validate_inputs(self, key: str, value: Any) -> None:
++        """Validate the inputs for the configuration."""
++        pass
++    
++class ProteinConfig(ConfigManager):
++    """
++    A class to manage configuration settings for protein sequences.
++
++    This class ensures that the configuration is a singleton.
++    It provides methods to get, set, and update configuration values.
++
++    Attributes:
++        _instance (Optional[ConfigManager]): The singleton instance of the ConfigManager.
++        _config (Dict[str, Any]): The configuration dictionary.
++    """
++    _instance = None
++
++    def __new__(cls):
++        """
++        Create a new instance of the ProteinConfig class.
++
++        Returns:
++            ProteinConfig: The singleton instance of the ProteinConfig.
++        """
++        if cls._instance is None:
++            cls._instance = super(ProteinConfig, cls).__new__(cls)
++            cls._instance.reset_config()
++        return cls._instance
++    
++    def validate_inputs(self, key: str, value: Any) -> None:
++        """
++        Validate the inputs for the configuration.
++
++        Args:
++            key (str): The key to validate.
++            value (Any): The value to validate.
++        
++        Raises:
++            ValueError: If the value is invalid.
++            TypeError: If the value is of the wrong type.
++        """
++        if key == 'ambiguous_aminoacid_behavior':
++            if value not in [
++                'raise_error',
++                'standardize_deterministic',
++                'standardize_random'
++            ]:
++                raise ValueError(f"Invalid value for ambiguous_aminoacid_behavior: {value}.")
++        elif key == 'ambiguous_aminoacid_map_override':
++            if not isinstance(value, dict):
++                raise TypeError(f"Invalid type for ambiguous_aminoacid_map_override: {value}.")
++            for ambiguous_aminoacid, aminoacids in value.items():
++                if not isinstance(aminoacids, list):
++                    raise TypeError(f"Invalid type for aminoacids: {aminoacids}.")
++                if not aminoacids:
++                    raise ValueError(f"Override for aminoacid '{ambiguous_aminoacid}' cannot be empty list.")
++                if ambiguous_aminoacid not in AMBIGUOUS_AMINOACID_MAP:
++                    raise ValueError(f"Invalid amino acid in ambiguous_aminoacid_map_override: {ambiguous_aminoacid}")
++        else:
++            raise ValueError(f"Invalid configuration key: {key}")
++
++    def reset_config(self) -> None:
++        """
++        Reset the configuration to the default values.
++        """
++        self._config = {
++            'ambiguous_aminoacid_behavior': 'standardize_random',
++            'ambiguous_aminoacid_map_override': {}
++        }
++
++
+ def load_python_object_from_disk(file_path: str) -> Any:
+     """
+     Load a Pickle object from disk and return it as a Python object.
+diff --git a/tests/test_CodonData.py b/tests/test_CodonData.py
+index 42342c9..1c718bb 100644
+--- a/tests/test_CodonData.py
++++ b/tests/test_CodonData.py
+@@ -9,10 +9,33 @@
+     get_amino_acid_sequence,
+     is_correct_seq,
+     read_fasta_file,
++    preprocess_protein_sequence,
+ )
+-
++from CodonTransformer.CodonUtils import ProteinConfig
+ 
+ class TestCodonData(unittest.TestCase):
++    def test_preprocess_protein_sequence(self):
++        with ProteinConfig() as config:
++            config.set("ambiguous_aminoacid_behavior", "raise_error")
++            protein = "Z_"
++            try:
++                preprocess_protein_sequence(protein)
++                self.fail("Expected ValueError")
++            except ValueError:
++                pass
++            config.set("ambiguous_aminoacid_behavior", "standardize_deterministic")
++            for _ in range(10):
++                preprocessed_protein = preprocess_protein_sequence(protein)
++                self.assertEqual(preprocessed_protein, "Q_")
++            config.set("ambiguous_aminoacid_behavior", "standardize_random")
++            random_results = set()
++            # The probability of getting the same result 30 times in a row is
++            # 1 in 1.073741824*10^9 if there are only two possible results.
++            for _ in range(30):
++                preprocessed_protein = preprocess_protein_sequence(protein)
++                random_results.add(preprocessed_protein)
++            self.assertGreater(len(random_results), 1)
++
+     def test_read_fasta_file(self):
+         fasta_content = ">sequence1\n" "ATGATGATGATGATG\n" ">sequence2\n" "TGATGATGATGA"
+ 
+diff --git a/tests/test_CodonUtils.py b/tests/test_CodonUtils.py
+index 1d9a94c..128b638 100644
+--- a/tests/test_CodonUtils.py
++++ b/tests/test_CodonUtils.py
+@@ -4,6 +4,7 @@
+ import unittest
+ 
+ from CodonTransformer.CodonUtils import (
++    ProteinConfig,
+     find_pattern_in_fasta,
+     get_organism2id_dict,
+     get_taxonomy_id,
+@@ -15,6 +16,51 @@
+ 
+ 
+ class TestCodonUtils(unittest.TestCase):
++    def test_config_manager(self):
++        with ProteinConfig() as config:
++            config.set(
++                "ambiguous_aminoacid_behavior",
++                "standardize_deterministic"
++            )
++            self.assertEqual(
++                config.get("ambiguous_aminoacid_behavior"),
++                "standardize_deterministic"
++            )
++            config.set(
++                "ambiguous_aminoacid_map_override",
++                {"X": ["A", "G"]}
++            )
++            self.assertEqual(
++                config.get("ambiguous_aminoacid_map_override"),
++                {"X": ["A", "G"]}
++            )
++            config.update({
++                "ambiguous_aminoacid_behavior": "raise_error",
++                "ambiguous_aminoacid_map_override": {"X": ["A", "G"]},
++            })
++            self.assertEqual(
++                config.get("ambiguous_aminoacid_behavior"),
++                "raise_error"
++            )
++            self.assertEqual(
++                config.get("ambiguous_aminoacid_map_override"),
++                {"X": ["A", "G"]}
++            )
++            try:
++                config.set("invalid_key", "invalid_value")
++                self.fail("Expected ValueError")
++            except ValueError:
++                pass
++        with ProteinConfig() as config:
++            self.assertEqual(
++                config.get("ambiguous_aminoacid_behavior"),
++                "standardize_random"
++            )
++            self.assertEqual(
++                config.get("ambiguous_aminoacid_map_override"),
++                {}
++            )
++
+     def test_load_python_object_from_disk(self):
+         test_obj = {"key1": "value1", "key2": 2}
+         with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as temp_file:

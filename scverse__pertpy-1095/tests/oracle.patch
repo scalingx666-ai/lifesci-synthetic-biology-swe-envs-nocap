@@ -1,0 +1,97 @@
+diff --git a/.pre-commit-config.yaml b/.pre-commit-config.yaml
+index 5c797cbc..3887e731 100644
+--- a/.pre-commit-config.yaml
++++ b/.pre-commit-config.yaml
+@@ -9,12 +9,12 @@ default_stages:
+ minimum_pre_commit_version: 2.16.0
+ repos:
+     - repo: https://github.com/biomejs/pre-commit
+-      rev: 055c65a8144b42a1f56908484127aec0c614fb85 # frozen: v2.5.10
++      rev: c4d01b70e92b66e6a88739145624279889634e92 # frozen: v2.5.11
+       hooks:
+           - id: biome-format
+             exclude: ^\.cruft\.json$ # inconsistent indentation with cruft - file never to be modified manually.
+     - repo: https://github.com/astral-sh/ruff-pre-commit
+-      rev: aab412d509121cb5f7533134b7e67f9fab59c682 # frozen: v0.16.4
++      rev: 1f1e8bf348ff38fc88619a38d3ca4d9c56abea49 # frozen: v0.16.5
+       hooks:
+           - id: ruff-check
+             args: [--fix, --exit-non-zero-on-fix, --unsafe-fixes]
+@@ -44,7 +44,7 @@ repos:
+             require_serial: true
+             pass_filenames: false
+     - repo: https://github.com/zizmorcore/zizmor-pre-commit
+-      rev: 451b56af716f9f0d0c2b816503a3fd0cf8b036fa # frozen: v1.29.0
++      rev: cef8b8350da46d8114c7e6b7272aebdccdf193ce # frozen: v1.30.0
+       hooks:
+           - id: zizmor
+             args: [--no-progress, --fix]
+diff --git a/docs/api/tools_index.md b/docs/api/tools_index.md
+index 59aa1a00..1c1bda0f 100644
+--- a/docs/api/tools_index.md
++++ b/docs/api/tools_index.md
+@@ -46,9 +46,7 @@ pdata = ps.compute(
+ 
+ edgr = pt.tl.EdgeR(pdata, design="~Efficacy+Treatment")
+ edgr.fit()
+-res_df = edgr.test_contrasts(
+-    edgr.contrast(column="Treatment", baseline="Chemo", group_to_compare="Anti-PD-L1+Chemo")
+-)
++res_df = edgr.test_contrasts(edgr.contrast(column="Treatment", baseline="Chemo", group_to_compare="Anti-PD-L1+Chemo"))
+ ```
+ 
+ Inspecting a model summarizes the input data, the design and whether the model has been fitted, rendered as HTML in Jupyter:
+@@ -172,9 +170,7 @@ mdata = milo.load(adata)
+ sc.pp.neighbors(mdata["rna"], use_rep="X_scVI", n_neighbors=150, n_pcs=10)
+ milo.make_nhoods(mdata["rna"], prop=0.1)
+ mdata = milo.count_nhoods(mdata, sample_col="patient_id")
+-mdata["rna"].obs["Status"] = (
+-    mdata["rna"].obs["Status"].cat.reorder_categories(["Healthy", "Covid"])
+-)
++mdata["rna"].obs["Status"] = mdata["rna"].obs["Status"].cat.reorder_categories(["Healthy", "Covid"])
+ milo.da_nhoods(mdata, design="~Status")
+ 
+ # Repeated measurements of the same donor are accounted for with a random intercept
+@@ -233,9 +229,7 @@ sccoda_data = sccoda.prepare(
+ )
+ sccoda.run_nuts(sccoda_data, modality_key="coda_salm")
+ sccoda.summary(sccoda_data, modality_key="coda_salm")
+-sccoda.plot_effects_barplot(
+-    sccoda_data, modality_key="coda_salm", parameter="Final Parameter"
+-)
++sccoda.plot_effects_barplot(sccoda_data, modality_key="coda_salm", parameter="Final Parameter")
+ ```
+ 
+ See [sccoda tutorial](https://pertpy.readthedocs.io/en/latest/tutorials/notebooks/sccoda.html), [extended sccoda tutorial](https://pertpy.readthedocs.io/en/latest/tutorials/notebooks/sccoda_extended.html) and [tasccoda tutorial](https://pertpy.readthedocs.io/en/latest/tutorials/notebooks/tasccoda.html).
+@@ -346,9 +340,7 @@ ps_adata = ps.compute_control_diff(
+ )
+ ps_adata = ps_adata[ps_adata.obs["perturbation"] != "control"].copy()
+ 
+-query_profile = -ps_adata[
+-    ps_adata.obs["perturbation"] == "p-sgCREB1-2"
+-].to_df().iloc[0]
++query_profile = -ps_adata[ps_adata.obs["perturbation"] == "p-sgCREB1-2"].to_df().iloc[0]
+ up_genes = query_profile[query_profile > 0].nlargest(20).index.tolist()
+ down_genes = query_profile[query_profile < 0].nsmallest(20).index.tolist()
+ 
+@@ -469,18 +461,14 @@ import pertpy as pt
+ 
+ train = pt.dt.kang_2018()
+ 
+-train_new = train[
+-    ~((train.obs["cell_type"] == "CD4T") & (train.obs["condition"] == "stimulated"))
+-]
++train_new = train[~((train.obs["cell_type"] == "CD4T") & (train.obs["condition"] == "stimulated"))]
+ train_new = train_new.copy()
+ 
+ pt.tl.Scgen.setup_anndata(train_new, batch_key="condition", labels_key="cell_type")
+ scgen = pt.tl.Scgen(train_new)
+ scgen.train(max_epochs=100, batch_size=32)
+ 
+-pred, delta = scgen.predict(
+-    ctrl_key="control", stim_key="stimulated", celltype_to_predict="CD4T"
+-)
++pred, delta = scgen.predict(ctrl_key="control", stim_key="stimulated", celltype_to_predict="CD4T")
+ pred.obs["condition"] = "pred"
+ ```
+ 

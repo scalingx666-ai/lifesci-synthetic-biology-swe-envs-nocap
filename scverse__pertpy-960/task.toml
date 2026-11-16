@@ -1,0 +1,67 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-960"
+description = "Fix minor bugs"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "78d0a4287a28a8c9d3d34c52c551102ee10a2acc"
+reference = "https://github.com/scverse/pertpy/pull/960"
+source_access = "auto"
+built_at = "2026-11-15T16:44:03.708736+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:cead57c6d31821b53a984ff3f72362153fa87dc22c9c055d02876a62d3c86f86"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-08T08:41:34Z"
+diff_format = "unified"
+context_files = [
+    "pertpy/tools/_augur.py",
+    "pertpy/tools/_dialogue.py",
+    "pertpy/tools/_perturbation_space/_clustering.py",
+    "pertpy/tools/_perturbation_space/_comparison.py",
+    "pertpy/tools/_perturbation_space/_discriminator_classifiers.py",
+    "pertpy/tools/_perturbation_space/_perturbation_space.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 64
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

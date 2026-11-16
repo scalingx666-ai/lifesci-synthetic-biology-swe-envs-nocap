@@ -1,0 +1,65 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1091"
+description = "Bump astral-sh/setup-uv from 10.0.0 to 10.0.1 in the actions-deps group"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "e2976e13944bbdb3e30db25bb4b231f730e83ea5"
+reference = "https://github.com/scverse/pertpy/pull/1091"
+source_access = "auto"
+built_at = "2026-11-15T16:40:46.444555+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:93a6ce8dd0175a7854a49fbbac80657e28e6a4e9cd8bdbca9bdb7025812062ce"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-08-26T11:12:47Z"
+diff_format = "unified"
+context_files = [
+    ".github/workflows/build.yml",
+    ".github/workflows/release.yml",
+    ".github/workflows/test.yml",
+    ".github/workflows/test_tutorials.yml",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 12
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

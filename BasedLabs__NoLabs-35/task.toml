@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/BasedLabs__NoLabs-35"
+description = "fix: fixed a3m and fasta handling"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "NoLabs",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "BasedLabs/NoLabs"
+ref = "9cea0df8862ec0d8b4d16c5d9153df69f7314adf"
+reference = "https://github.com/BasedLabs/NoLabs/pull/35"
+source_access = "auto"
+built_at = "2026-11-16T03:19:08.229673+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:56134813035ff14ce8fd337b980454c304f5b72f7cc59a25fe58058229e1ab8a"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2024-03-05T12:52:12Z"
+diff_format = "unified"
+context_files = [
+    "README.md",
+    "microservices/rosettafold/microservice/services.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 33
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

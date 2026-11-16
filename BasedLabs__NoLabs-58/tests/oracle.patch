@@ -1,0 +1,38 @@
+diff --git a/compose.yaml b/compose.yaml
+index 772c7b95..ccec3bfa 100644
+--- a/compose.yaml
++++ b/compose.yaml
+@@ -154,7 +154,7 @@ services:
+       dockerfile: build/Dockerfile
+     command: --host=0.0.0.0 --port=5741
+   biobuddy:
+-    image: 'ghcr.io/basedlabs/biobuddy:1.1.0'
++    image: 'ghcr.io/basedlabs/biobuddy:1.1.1'
+     network_mode: host
+     build:
+       context: microservices/biobuddy
+diff --git a/microservices/biobuddy/build/Dockerfile b/microservices/biobuddy/build/Dockerfile
+index ca7622d2..37f0d986 100644
+--- a/microservices/biobuddy/build/Dockerfile
++++ b/microservices/biobuddy/build/Dockerfile
+@@ -1,7 +1,7 @@
+ # Use a PyTorch base image with CUDA support
+-FROM python:3.8
++FROM python:3.11
+ 
+-# Install Python 3.8 and curl
++# Install Python 3.11 and curl
+ RUN apt-get update && apt-get install -y curl python3-pip
+ 
+ # Set a working directory
+@@ -11,8 +11,8 @@ WORKDIR /app
+ COPY ./requirements.txt /app/
+ 
+ # Install dependencies
+-RUN python3.8 -m pip install --upgrade pip
+-RUN python3.8 -m pip install --default-timeout=100 -r requirements.txt
++RUN python3.11 -m pip install --upgrade pip
++RUN python3.11 -m pip install --default-timeout=100 -r requirements.txt
+ 
+ # Now copy the rest of the application files into the container
+ COPY ./biobuddy /app/biobuddy

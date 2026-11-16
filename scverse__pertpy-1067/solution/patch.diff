@@ -1,0 +1,262 @@
+diff --git a/CITATION.cff b/CITATION.cff
+new file mode 100644
+index 00000000..869a69eb
+--- /dev/null
++++ b/CITATION.cff
+@@ -0,0 +1,113 @@
++cff-version: 1.2.0
++message: If you use pertpy in your research, please cite the article below.
++title: pertpy
++abstract: >-
++  Pertpy is a scverse ecosystem framework for analyzing large-scale single-cell perturbation experiments.
++  It provides tools for harmonizing perturbation datasets, automating metadata annotation, calculating
++  perturbation distances, and efficiently analyzing how cells respond to various stimuli like genetic
++  modifications, drug treatments, and environmental changes.
++type: software
++license: Apache-2.0
++repository-code: https://github.com/scverse/pertpy
++url: https://pertpy.readthedocs.io
++keywords:
++  - single-cell
++  - perturbation
++  - scverse
++  - bioinformatics
++  - computational-biology
++  - scRNA-seq
++  - CRISPR
++  - Perturb-seq
++authors:
++  - family-names: Heumos
++    given-names: Lukas
++  - family-names: May
++    given-names: Lilly
++  - family-names: Peidli
++    given-names: Stefan
++  - family-names: Ostner
++    given-names: Johannes
++  - family-names: Sturm
++    given-names: Gregor
++  - family-names: Dann
++    given-names: Emma
++  - family-names: Ji
++    given-names: Yuge
++  - family-names: Zhang
++    given-names: Xinyue
++  - family-names: Wu
++    given-names: Xichen
++  - family-names: Green
++    given-names: Tessa
++  - family-names: Schumacher
++    given-names: Antonia
++preferred-citation:
++  type: article
++  title: "Pertpy: an end-to-end framework for perturbation analysis"
++  journal: Nature Methods
++  year: 2025
++  doi: 10.1038/s41592-025-02909-7
++  url: https://doi.org/10.1038/s41592-025-02909-7
++  issn: 1548-7105
++  publisher:
++    name: Springer Nature
++  authors:
++    - family-names: Heumos
++      given-names: Lukas
++    - family-names: Ji
++      given-names: Yuge
++    - family-names: May
++      given-names: Lilly
++    - family-names: Green
++      given-names: Tessa D.
++    - family-names: Peidli
++      given-names: Stefan
++    - family-names: Zhang
++      given-names: Xinyue
++    - family-names: Wu
++      given-names: Xichen
++    - family-names: Ostner
++      given-names: Johannes
++    - family-names: Schumacher
++      given-names: Antonia
++    - family-names: Hrovatin
++      given-names: Karin
++    - family-names: Müller
++      given-names: Michaela
++    - family-names: Chong
++      given-names: Faye
++    - family-names: Sturm
++      given-names: Gregor
++    - family-names: Tejada
++      given-names: Alejandro
++    - family-names: Dann
++      given-names: Emma
++    - family-names: Dong
++      given-names: Mingze
++    - family-names: Pinto
++      given-names: Gonçalo
++    - family-names: Bahrami
++      given-names: Mojtaba
++    - family-names: Gold
++      given-names: Ilan
++    - family-names: Rybakov
++      given-names: Sergei
++    - family-names: Namsaraeva
++      given-names: Altana
++    - family-names: Moinfar
++      given-names: Amir Ali
++    - family-names: Zheng
++      given-names: Zihe
++    - family-names: Roellin
++      given-names: Eljas
++    - family-names: Mekki
++      given-names: Isra
++    - family-names: Sander
++      given-names: Chris
++    - family-names: Lotfollahi
++      given-names: Mohammad
++    - family-names: Schiller
++      given-names: Herbert B.
++    - family-names: Theis
++      given-names: Fabian J.
+diff --git a/docs/conf.py b/docs/conf.py
+index 625afe6b..7c9f8cb4 100644
+--- a/docs/conf.py
++++ b/docs/conf.py
+@@ -1,6 +1,7 @@
+ #!/usr/bin/env python
+ # mypy: ignore-errors
+ 
++import os
+ import sys
+ from datetime import datetime
+ from importlib.metadata import metadata
+@@ -41,11 +42,17 @@
+     "sphinx_tabs.tabs",
+     "sphinx_issues",
+     "sphinxcontrib.bibtex",
++    "sphinxext.opengraph",
+     "IPython.sphinxext.ipython_console_highlighting",
+ ]
+ 
+-ogp_site_url = "https://pertpy.readthedocs.io/en/latest/"
+-ogp_image = "https://pertpy.readthedocs.io/en/latest/_static/pertpy_logo.png"
++html_baseurl = os.environ.get("READTHEDOCS_CANONICAL_URL", "https://pertpy.readthedocs.io/en/stable/")
++
++ogp_site_url = html_baseurl
++ogp_site_name = "pertpy"
++ogp_image = "_static/pertpy_logo.png"
++ogp_enable_meta_description = True
++ogp_social_cards = {"enable": False}
+ 
+ # nbsphinx specific settings
+ exclude_patterns = [
+@@ -104,6 +111,7 @@
+ html_theme_options = {}
+ 
+ html_static_path = ["_static"]
++html_extra_path = ["llms.txt"]
+ html_css_files = ["css/overwrite.css", "css/sphinx_gallery.css"]
+ html_show_sphinx = False
+ 
+diff --git a/docs/index.md b/docs/index.md
+index f6ca1fa1..191a2860 100644
+--- a/docs/index.md
++++ b/docs/index.md
+@@ -1,4 +1,4 @@
+-# pertpy
++# pertpy - Perturbation Analysis in Python
+ 
+ [Pertpy](https://www.nature.com/articles/s41592-025-02909-7) is a scverse ecosystem framework for analyzing large-scale single-cell perturbation experiments.
+ It provides tools for harmonizing perturbation datasets, automating metadata annotation, calculating perturbation distances, and efficiently analyzing how cells respond to various stimuli like genetic modifications, drug treatments, and environmental changes.
+diff --git a/docs/llms.txt b/docs/llms.txt
+new file mode 100644
+index 00000000..4984dc17
+--- /dev/null
++++ b/docs/llms.txt
+@@ -0,0 +1,57 @@
++# pertpy
++
++> Pertpy is a scverse ecosystem framework for analyzing large-scale single-cell perturbation experiments.
++> It covers metadata annotation, guide RNA assignment, perturbation efficacy, compositional analysis, differential gene expression, perturbation distances, perturbation spaces, and response prediction on AnnData and MuData objects.
++
++Pertpy is imported as `import pertpy as pt` and exposes four modules:
++`pt.dt` (datasets), `pt.pp` (preprocessing), `pt.tl` (tools) and `pt.md` (metadata annotation).
++Tools are classes that operate on an AnnData or MuData object, so a typical call is `pt.tl.Milo()` followed by methods on the returned object.
++
++Every page listed below is also available as Markdown by requesting it with the `Accept: text/markdown` header.
++
++## Start here
++
++- [Installation](https://pertpy.readthedocs.io/en/stable/installation.html): pip and conda-forge installation, including the `de`, `tcoda` and `scgen` extras that individual tools require.
++- [API reference](https://pertpy.readthedocs.io/en/stable/api.html): entry point to all four modules.
++- [Tutorials](https://pertpy.readthedocs.io/en/stable/tutorials.html): executable notebooks for every tool.
++- [Use cases](https://pertpy.readthedocs.io/en/stable/usecases.html): end-to-end reanalyses of published perturbation studies.
++
++## Tools by task
++
++- [Differential gene expression](https://pertpy.readthedocs.io/en/stable/api/tools_index.html#differential-gene-expression): `pt.tl.PyDESeq2`, `pt.tl.EdgeR`, `pt.tl.WilcoxonTest`, `pt.tl.TTest`, `pt.tl.PermutationTest` and `pt.tl.Statsmodels` behind one interface that supports complex designs and contrasts.
++- [Perturbation assignment and efficacy](https://pertpy.readthedocs.io/en/stable/api/tools_index.html#pooled-crispr-screens): `pt.tl.Mixscape` for binary perturbed/non-perturbed calls and `pt.tl.Mixscale` for continuous perturbation scores in pooled CRISPR screens.
++- [Differential abundance without labeled groups](https://pertpy.readthedocs.io/en/stable/api/tools_index.html#compositional-analysis): `pt.tl.Milo` tests differential abundance on k-nearest-neighbor graph neighborhoods.
++- [Compositional analysis with labeled groups](https://pertpy.readthedocs.io/en/stable/api/tools_index.html#compositional-analysis): `pt.tl.Sccoda` and `pt.tl.Tasccoda` model cell type composition with Bayesian hierarchical models.
++- [Multicellular programs](https://pertpy.readthedocs.io/en/stable/api/tools_index.html#multicellular-programs-dialogue): `pt.tl.Dialogue` identifies latent programs coordinated across cell types.
++- [Enrichment](https://pertpy.readthedocs.io/en/stable/api/tools_index.html#enrichment): `pt.tl.Enrichment` scores pathway and drug target gene sets, including drug2cell.
++- [Perturbation distances and permutation tests](https://pertpy.readthedocs.io/en/stable/api/tools_index.html#distances-and-permutation-tests): `pt.tl.Distance` computes metrics such as edistance, MMD and Wasserstein between perturbation groups, `pt.tl.DistanceTest` turns them into permutation tests.
++- [Perturbation spaces](https://pertpy.readthedocs.io/en/stable/api/tools_index.html#perturbation-space): `pt.tl.PseudobulkSpace`, `pt.tl.CentroidSpace`, `pt.tl.DistanceSpace`, `pt.tl.EmbeddingSpace` and the classifier and clustering spaces summarize all cells of a perturbation into one observation.
++- [Cell type prioritization](https://pertpy.readthedocs.io/en/stable/api/tools_index.html#rank-perturbations-augur): `pt.tl.Augur` ranks cell types by how strongly they respond to a perturbation.
++- [Response prediction](https://pertpy.readthedocs.io/en/stable/api/tools_index.html#gene-expression-prediction-with-scgen): `pt.tl.Scgen` predicts cell-type-specific responses to a perturbation.
++- [Causal effect analysis](https://pertpy.readthedocs.io/en/stable/api/tools_index.html#causal-perturbation-analysis-with-cinema-ot): `pt.tl.Cinemaot` separates confounding variation from perturbation effects to obtain counterfactual cell pairs.
++
++## Data and metadata
++
++- [Datasets](https://pertpy.readthedocs.io/en/stable/api/datasets_index.html): `pt.dt` downloads harmonized perturbation datasets such as `norman_2019`, `papalexi_2021`, `replogle_2022_k562_essential` and `srivatsan_2020_sciplex3`.
++- [Preprocessing](https://pertpy.readthedocs.io/en/stable/api/preprocessing_index.html): guide RNA assignment for pooled CRISPR screens.
++- [Metadata annotation](https://pertpy.readthedocs.io/en/stable/api/metadata_index.html): `pt.md.CellLine`, `pt.md.Compound`, `pt.md.Drug` and `pt.md.Moa` annotate cell lines, compounds and mechanisms of action from public databases.
++
++## Tutorials
++
++- [Guide RNA assignment](https://pertpy.readthedocs.io/en/stable/tutorials/notebooks/guide_rna_assignment.html)
++- [Perturbation efficacy with Mixscape and Mixscale](https://pertpy.readthedocs.io/en/stable/tutorials/notebooks/perturbation_efficacy.html)
++- [Differential gene expression](https://pertpy.readthedocs.io/en/stable/tutorials/notebooks/differential_gene_expression.html)
++- [Differential abundance with Milo](https://pertpy.readthedocs.io/en/stable/tutorials/notebooks/milo.html)
++- [Compositional analysis with scCODA](https://pertpy.readthedocs.io/en/stable/tutorials/notebooks/sccoda.html)
++- [Perturbation distances](https://pertpy.readthedocs.io/en/stable/tutorials/notebooks/distances.html)
++- [Perturbation spaces](https://pertpy.readthedocs.io/en/stable/tutorials/notebooks/perturbation_space.html)
++- [Cell type prioritization with Augur](https://pertpy.readthedocs.io/en/stable/tutorials/notebooks/augur.html)
++- [Metadata annotation](https://pertpy.readthedocs.io/en/stable/tutorials/notebooks/metadata_annotation.html)
++
++## Project
++
++- [Source code](https://github.com/scverse/pertpy)
++- [Publication](https://doi.org/10.1038/s41592-025-02909-7): Heumos et al., Pertpy: an end-to-end framework for perturbation analysis, Nature Methods 2025.
++- [Changelog](https://pertpy.readthedocs.io/en/stable/changelog.html)
++- [Contributing](https://pertpy.readthedocs.io/en/stable/contributing.html)
++- [Forum](https://discourse.scverse.org/c/ecosystem/pertpy/46)
+diff --git a/pyproject.toml b/pyproject.toml
+index 0d76533f..10d8b44e 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -28,6 +28,25 @@ maintainers = [
+ urls.Documentation = "https://pertpy.readthedocs.io"
+ urls.Source = "https://github.com/scverse/pertpy"
+ urls.Home-page = "https://github.com/scverse/pertpy"
++urls.Issues = "https://github.com/scverse/pertpy/issues"
++urls.Changelog = "https://pertpy.readthedocs.io/en/stable/changelog.html"
++urls.Forum = "https://discourse.scverse.org/c/ecosystem/pertpy/46"
++urls.Publication = "https://doi.org/10.1038/s41592-025-02909-7"
++
++keywords = [
++    "single-cell",
++    "perturbation",
++    "scverse",
++    "bioinformatics",
++    "computational-biology",
++    "scRNA-seq",
++    "CRISPR",
++    "Perturb-seq",
++    "differential-expression",
++    "differential-abundance",
++    "compositional-analysis",
++    "anndata",
++]
+ 
+ classifiers = [
+     "License :: OSI Approved :: Apache Software License",

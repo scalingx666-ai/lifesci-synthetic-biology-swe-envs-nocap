@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1197"
+description = "Align Mixscape marker selection and classification with Seurat"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "b29fc5a05d2ae777c07e2517d68b743bc4a9a55f"
+reference = "https://github.com/scverse/pertpy/pull/1197"
+source_access = "auto"
+built_at = "2026-11-15T16:36:50.982761+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:dd0a4093b5c76ef908610a3f5c54d25851aa18dd3b0913dc4edc74980ea71aca"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-11-04T10:35:16Z"
+diff_format = "unified"
+context_files = [
+    "src/pertpy/tools/_perturbation_efficacy/_base.py",
+    "src/pertpy/tools/_perturbation_efficacy/_mixscape.py",
+    "tests/tools/_perturbation_efficacy/test_mixscape.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 260
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

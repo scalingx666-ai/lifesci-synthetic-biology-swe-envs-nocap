@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1137"
+description = "Port Milo's GLMM fits to numba"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "b56f68f9e9977c10716a91978439b5acae173228"
+reference = "https://github.com/scverse/pertpy/pull/1137"
+source_access = "auto"
+built_at = "2026-11-15T16:39:11.243903+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:96c1b6e669a7e0b1884e349882dcdc7c707ee1af97d2548e65db90a11e95c019"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-10-01T15:51:26Z"
+diff_format = "unified"
+context_files = [
+    "src/pertpy/tools/_milo_glmm.py",
+    "tests/tools/test_milo_glmm.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 693
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

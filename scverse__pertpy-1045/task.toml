@@ -1,0 +1,72 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1045"
+description = "Update template to v0.8.0"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "473b6ad2315a69351f95f6d914d73b95e74a9017"
+reference = "https://github.com/scverse/pertpy/pull/1045"
+source_access = "auto"
+built_at = "2026-11-15T16:42:03.338793+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:4af441e86c431d2eea1f1955d1b415767da9a1712b5e15012fe40996d75440f5"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-07-17T09:19:31Z"
+diff_format = "unified"
+context_files = [
+    ".cruft.json",
+    ".github/dependabot.yml",
+    ".github/workflows/build.yml",
+    ".github/workflows/labeler.yml",
+    ".github/workflows/release.yml",
+    ".github/workflows/release_drafter.yml",
+    ".github/workflows/test.yml",
+    ".github/workflows/test_tutorials.yml",
+    ".pre-commit-config.yaml",
+    "pertpy/__init__.py",
+    "pyproject.toml",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 119
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

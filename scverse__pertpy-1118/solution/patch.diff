@@ -1,0 +1,276 @@
+diff --git a/src/pertpy/tools/_cinemaot.py b/src/pertpy/tools/_cinemaot.py
+index 8d7436cc..127ebea2 100644
+--- a/src/pertpy/tools/_cinemaot.py
++++ b/src/pertpy/tools/_cinemaot.py
+@@ -902,10 +902,7 @@ def fit(self, P: ArrayLike):
+             c = csum / P.T.dot(r)
+             r = rsum / P.dot(c)
+ 
+-            self._D1 = np.diag(np.squeeze(r))
+-            self._D2 = np.diag(np.squeeze(c))
+-
+-            P_eps = np.diag(self._D1)[:, None] * P * np.diag(self._D2)[None, :]
++            P_eps = r * P * c.T
+ 
+             self._iterations += 1
+ 
+diff --git a/src/pertpy/tools/_coda/_base_coda.py b/src/pertpy/tools/_coda/_base_coda.py
+index 3d9aa418..75d07b9c 100644
+--- a/src/pertpy/tools/_coda/_base_coda.py
++++ b/src/pertpy/tools/_coda/_base_coda.py
+@@ -362,7 +362,7 @@ def __run_mcmc(
+ 
+         # Save intercept and effect dfs in `sample_adata.varm` (one effect df per covariate)
+         sample_adata.varm["intercept_df"] = intercept_df
+-        for cov in effect_df.index.get_level_values("Covariate"):
++        for cov in effect_df.index.get_level_values("Covariate").unique():
+             sample_adata.varm[f"effect_df_{cov}"] = effect_df.loc[cov, :]
+         if copy:
+             return sample_adata
+@@ -1187,7 +1187,7 @@ def set_fdr(self, data: AnnData | MuData, est_fdr: float, modality_key: str = "c
+             raise ValueError("No valid model type!")
+ 
+         sample_adata.varm["intercept_df"] = intercept_df
+-        for cov in effect_df.index.get_level_values("Covariate"):
++        for cov in effect_df.index.get_level_values("Covariate").unique():
+             sample_adata.varm[f"effect_df_{cov}"] = effect_df.loc[cov, :]
+ 
+     def credible_effects(
+@@ -2725,7 +2725,10 @@ def from_scanpy(
+ 
+     if isinstance(sample_identifier, list):
+         adata.obs = cast_frame(adata.obs).copy()
+-        adata.obs["scCODA_sample_id"] = cast_frame(adata.obs)[sample_identifier].agg("-".join, axis=1)
++        obs = cast_frame(adata.obs)
++        adata.obs["scCODA_sample_id"] = pd.Series(
++            ["-".join(vals) for vals in zip(*(obs[c] for c in sample_identifier), strict=True)], index=obs.index
++        )
+         sample_identifier = "scCODA_sample_id"
+ 
+     groups = cast_frame(adata.obs).value_counts([sample_identifier, cell_type_identifier])
+@@ -2737,13 +2740,13 @@ def from_scanpy(
+         covariate_df_ = pd.concat([covariate_df_, covariate_df_uns], axis=1)
+ 
+     if covariate_obs:
+-        unique_check = cast_frame(adata.obs).groupby(sample_identifier).nunique()
++        unique_check = cast_frame(adata.obs).groupby(sample_identifier)[covariate_obs].nunique()
+         for c in covariate_obs.copy():
+             if unique_check[c].max() != 1:
+                 logger.warning(f"Covariate {c} has non-unique values for batch! Skipping...")
+                 covariate_obs.remove(c)
+         if covariate_obs:
+-            covariate_df_obs = cast_frame(adata.obs).groupby(sample_identifier).first()[covariate_obs]
++            covariate_df_obs = cast_frame(adata.obs).groupby(sample_identifier)[covariate_obs].first()
+             covariate_df_ = pd.concat([covariate_df_, covariate_df_obs], axis=1)
+ 
+     if covariate_df is not None:
+diff --git a/src/pertpy/tools/_distances/_distance_tests.py b/src/pertpy/tools/_distances/_distance_tests.py
+index 42e71e64..00ac7ac5 100644
+--- a/src/pertpy/tools/_distances/_distance_tests.py
++++ b/src/pertpy/tools/_distances/_distance_tests.py
+@@ -169,6 +169,8 @@ def test_xy(self, adata: AnnData, groupby: str, contrast: str, show_progressbar:
+         embedding = cast_matrix(adata.obsm[self.obsm_key])
+ 
+         # Generate the null distribution
++        obs_labels = np.asarray(adata.obs[groupby].values)
++        masks = {group: adata.obs[groupby].isin([group, contrast]).to_numpy() for group in groups if group != contrast}
+         results = []
+         for _permutation in fct(range(self.n_perms)):
+             # per perturbation, shuffle with control and compute e-distance
+@@ -177,14 +179,15 @@ def test_xy(self, adata: AnnData, groupby: str, contrast: str, show_progressbar:
+                 if group == contrast:
+                     continue
+                 # Shuffle the labels of the groups
+-                mask = adata.obs[groupby].isin([group, contrast])
+-                labels = np.asarray(adata.obs[groupby].values)[mask]
++                mask = masks[group]
++                labels = obs_labels[mask]
+                 rng = np.random.default_rng()
+                 shuffled_labels = rng.permutation(labels)
+                 idx = shuffled_labels == group
+ 
+-                X = embedding[mask][idx]  # shuffled group
+-                Y = embedding[mask][~idx]  # shuffled contrast
++                group_embedding = embedding[mask]
++                X = group_embedding[idx]  # shuffled group
++                Y = group_embedding[~idx]  # shuffled contrast
+                 dist = self.distance(X, Y)
+ 
+                 df.loc[group, "distance"] = dist
+@@ -273,6 +276,8 @@ def test_precomputed(self, adata: AnnData, groupby: str, contrast: str, verbose:
+             precomputed_distances[group] = pwd
+ 
+         # Generate the null distribution
++        obs_labels = np.asarray(adata.obs[groupby].values)
++        masks = {group: adata.obs[groupby].isin([group, contrast]).to_numpy() for group in groups if group != contrast}
+         results = []
+         for _permutation in fct(range(self.n_perms)):
+             # per perturbation, shuffle with control and compute e-distance
+@@ -281,8 +286,8 @@ def test_precomputed(self, adata: AnnData, groupby: str, contrast: str, verbose:
+                 if group == contrast:
+                     continue
+                 # Shuffle the labels of the groups
+-                mask = adata.obs[groupby].isin([group, contrast])
+-                labels = np.asarray(adata.obs[groupby].values)[mask]
++                mask = masks[group]
++                labels = obs_labels[mask]
+                 rng = np.random.default_rng()
+                 shuffled_labels = rng.permutation(labels)
+                 idx = shuffled_labels == group
+@@ -297,9 +302,7 @@ def test_precomputed(self, adata: AnnData, groupby: str, contrast: str, verbose:
+         for group in groups:
+             if group == contrast:
+                 continue
+-            mask = adata.obs[groupby].isin([group, contrast])
+-            labels = np.asarray(adata.obs[groupby].values)[mask]
+-            idx = labels == group
++            idx = obs_labels[masks[group]] == group
+ 
+             precomputed_distance = precomputed_distances[group]
+             distance_result = self.distance.metric_fct.from_precomputed(precomputed_distance, idx)
+diff --git a/src/pertpy/tools/_distances/_distances.py b/src/pertpy/tools/_distances/_distances.py
+index 369d029d..64e87b3c 100644
+--- a/src/pertpy/tools/_distances/_distances.py
++++ b/src/pertpy/tools/_distances/_distances.py
+@@ -660,13 +660,12 @@ def onesided_distances(
+                 if self.layer_key
+                 else cast_matrix(adata.obsm[cast("str", self.obsm_key)]).copy()
+             )
++            cells_y = to_dense(embedding[np.asarray(grouping == selected_group)])
+             for group_x in fct(groups):
+                 cells_x = embedding[np.asarray(grouping == group_x)].copy()
+-                group_y = selected_group
+-                cells_y = embedding[np.asarray(grouping == group_y)].copy()
+                 if not bootstrap:
+                     # By distance axiom, the distance between a group and itself is 0
+-                    dist = 0.0 if group_x == group_y else self(cells_x, cells_y, **kwargs)
++                    dist = 0.0 if group_x == selected_group else self(cells_x, cells_y, **kwargs)
+                     df.loc[group_x] = dist
+                 else:
+                     bootstrap_output = self.bootstrap(
+diff --git a/src/pertpy/tools/_enrichment.py b/src/pertpy/tools/_enrichment.py
+index c131b6c7..47aa9c00 100644
+--- a/src/pertpy/tools/_enrichment.py
++++ b/src/pertpy/tools/_enrichment.py
+@@ -219,7 +219,7 @@ def score(
+         full_targets = target_groups.copy()
+ 
+         for drug in target_groups:
+-            target_groups[drug] = np.isin(adata.var_names, target_groups[drug])
++            target_groups[drug] = adata.var_names.isin(target_groups[drug])
+ 
+         # Scoring is done via matrix multiplication of the original cell by gene matrix by a new gene by drug matrix
+         # with the entries in the new matrix being the weights of each gene for that group (such as drug)
+@@ -452,15 +452,13 @@ def hypergeometric(
+             results["universe"] = len(universe)
+             results["pvals"] = results["pvals"].astype(float)
+ 
+-            for ind in results.index:
+-                gene_group = target_groups[ind]
+-                common = gene_group.intersection(markers)
+-                results.loc[ind, "intersection"] = len(common)
+-                results.loc[ind, "gene_group"] = len(gene_group)
+-                # need to subtract 1 from the intersection length
+-                # https://alexlenail.medium.com/understanding-and-implementing-the-hypergeometric-test-in-python-a7db688a7458
+-                pval = hypergeom.sf(len(common) - 1, len(universe), len(markers), len(gene_group))
+-                results.loc[ind, "pvals"] = pval
++            intersection = np.array([len(target_groups[ind] & markers) for ind in results.index], dtype=np.int64)
++            gene_group = np.array([len(target_groups[ind]) for ind in results.index], dtype=np.int64)
++            results["intersection"] = intersection
++            results["gene_group"] = gene_group
++            # need to subtract 1 from the intersection length
++            # https://alexlenail.medium.com/understanding-and-implementing-the-hypergeometric-test-in-python-a7db688a7458
++            results["pvals"] = hypergeom.sf(intersection - 1, len(universe), len(markers), gene_group)
+             # Just in case any NaNs popped up somehow, fill them to 1 so FDR works
+             results = results.fillna(1)
+             if corr_method == "benjamini-hochberg":
+diff --git a/src/pertpy/tools/_milo.py b/src/pertpy/tools/_milo.py
+index 30d03a70..7e5efe19 100644
+--- a/src/pertpy/tools/_milo.py
++++ b/src/pertpy/tools/_milo.py
+@@ -19,7 +19,7 @@
+ 
+ from pertpy._doc import _doc_params, doc_common_plot_args
+ from pertpy._logger import logger
+-from pertpy._types import CSBase, cast_frame, cast_matrix
++from pertpy._types import CSBase, cast_dense, cast_frame, cast_matrix
+ from pertpy.tools._milo_glmm import fit_nb_glmm_nhoods, log_cpm, parse_random_effects, random_effect_matrices
+ 
+ if TYPE_CHECKING:
+@@ -276,22 +276,24 @@ def make_nhoods(
+                 use_rep = "X_pca"
+             knn_graph = adata.obsp[neighbors_key + "_connectivities"].copy()  # type: ignore[union-attr]
+ 
+-        X_dimred = adata.obsm[use_rep]
++        X_dimred = cast_dense(adata.obsm[use_rep])
+         n_ixs = int(np.round(adata.n_obs * prop))
+         knn_graph[knn_graph != 0] = 1
+         random.seed(seed)
+         random_vertices = random.sample(range(adata.n_obs), k=n_ixs)
+         random_vertices.sort()
+         ixs_nn = knn_graph[random_vertices, :]
+-        non_zero_rows = ixs_nn.nonzero()[0]
+-        non_zero_cols = ixs_nn.nonzero()[1]
++        non_zero_rows, non_zero_cols = ixs_nn.nonzero()
++        # nonzero() returns row indices sorted, so each vertex's neighbours are a contiguous slice
++        row_bounds = np.searchsorted(non_zero_rows, np.arange(len(random_vertices) + 1))
+         refined_vertices = np.empty(len(random_vertices), dtype=np.int64)
+ 
+         for i in range(len(random_vertices)):
+-            nh_pos = np.median(X_dimred[non_zero_cols[non_zero_rows == i], :], 0).reshape(-1, 1)  # type: ignore[arg-type]
+-            nn_ixs = non_zero_cols[non_zero_rows == i]
++            nn_ixs = non_zero_cols[row_bounds[i] : row_bounds[i + 1]]
++            X_nn = X_dimred[nn_ixs, :]
++            nh_pos = np.median(X_nn, 0).reshape(-1, 1)
+             # Find closest real point (amongst nearest neighbors)
+-            dists = euclidean_distances(X_dimred[non_zero_cols[non_zero_rows == i], :], nh_pos.T)
++            dists = euclidean_distances(X_nn, nh_pos.T)
+             # Update vertex index
+             refined_vertices[i] = nn_ixs[dists.argmin()]
+ 
+@@ -1180,7 +1182,7 @@ def add_nhood_expression(self, mdata: MuData, layer: str | None = None, feature_
+ 
+         # Aggregate over nhoods -- taking the mean
+         nhoods_X = X.T.dot(adata.obsm["nhoods"])  # type: ignore[arg-type, type-var, union-attr]
+-        nhoods_X = csr_matrix(nhoods_X / adata.obsm["nhoods"].toarray().sum(0))  # type: ignore[operator, union-attr]
++        nhoods_X = csr_matrix(nhoods_X / np.asarray(cast_matrix(adata.obsm["nhoods"]).sum(0)).ravel())
+         sample_adata.varm[expr_id] = nhoods_X.T
+ 
+     def _setup_rpy2(
+diff --git a/src/pertpy/tools/_perturbation_efficacy/_mixscape.py b/src/pertpy/tools/_perturbation_efficacy/_mixscape.py
+index 6045b1c9..9b048cd6 100644
+--- a/src/pertpy/tools/_perturbation_efficacy/_mixscape.py
++++ b/src/pertpy/tools/_perturbation_efficacy/_mixscape.py
+@@ -231,7 +231,7 @@ def mixscape(
+                         obs.loc[np.array(orig_guide_cells_index)[ko_mask], new_class_name] = gene
+                         obs.loc[np.array(orig_guide_cells_index)[~ko_mask], new_class_name] = f"{gene} NP"
+ 
+-                        if sum(obs[new_class_name][split_mask] == gene) < min_de_genes:
++                        if (obs[new_class_name][split_mask] == gene).sum() < min_de_genes:
+                             obs.loc[guide_cells, new_class_name] = "NP"
+                             converged = True
+                         current_classes = obs[new_class_name][all_cells]
+@@ -243,8 +243,9 @@ def mixscape(
+ 
+                     obs.loc[(obs[new_class_name] == gene) & split_mask, new_class_name] = f"{gene} {perturbation_type}"
+ 
+-                obs[f"{new_class_name}_global"] = [a.split(" ")[-1] for a in obs[new_class_name]]
+                 obs.loc[orig_guide_cells_index, f"{new_class_name}_p_{perturbation_type.lower()}"] = post_prob
++            if gene_targets:
++                obs[f"{new_class_name}_global"] = [a.split(" ")[-1] for a in obs[new_class_name]]
+         adata.uns["mixscape"] = gv_list
+ 
+         if copy:
+diff --git a/src/pertpy/tools/_scgen/_utils.py b/src/pertpy/tools/_scgen/_utils.py
+index ae115444..7d60ada7 100644
+--- a/src/pertpy/tools/_scgen/_utils.py
++++ b/src/pertpy/tools/_scgen/_utils.py
+@@ -88,6 +88,7 @@ def balancer(
+         index_all.append(index_cls_r)
+ 
+     indices = np.concatenate(index_all)
+-    balanced_data = ad.concat([adata[i : i + 1] for i in indices], index_unique="-")
++    balanced_data = ad.concat([adata[indices]])
++    balanced_data.obs_names = adata.obs_names[indices] + "-" + np.arange(len(indices)).astype(str)
+ 
+     return balanced_data

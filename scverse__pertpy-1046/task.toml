@@ -1,0 +1,65 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1046"
+description = "Bump the actions-deps group with 3 updates"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "340eb1f4999f9c26e4f9fefb2e32d035213a0695"
+reference = "https://github.com/scverse/pertpy/pull/1046"
+source_access = "auto"
+built_at = "2026-11-15T16:42:00.811917+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:27d038cce5c560f36892d6f38e4509a678e4181b32bcd39403a4654b35af5519"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-07-17T09:31:49Z"
+diff_format = "unified"
+context_files = [
+    ".github/workflows/labeler.yml",
+    ".github/workflows/release_drafter.yml",
+    ".github/workflows/test.yml",
+    ".github/workflows/test_tutorials.yml",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 10
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

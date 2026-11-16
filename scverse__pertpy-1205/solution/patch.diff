@@ -1,0 +1,853 @@
+diff --git a/.github/pull_request_template.md b/.github/pull_request_template.md
+index 093e6a23..b38cd6df 100644
+--- a/.github/pull_request_template.md
++++ b/.github/pull_request_template.md
+@@ -5,16 +5,16 @@
+ <!-- See the scverse AI policy: https://scverse.org/about/ai_policy/ -->
+ <!-- Pull requests that skip this section are closed without review; undisclosed LLM use can lead to a ban. -->
+ 
+--   [ ] LLM or coding agent used: <!-- "none", or the model and version, e.g. "Claude Opus 5.5 via Claude Code" -->
+--   [ ] If one was used, I, a human, have reviewed, understood and tested every changed line
++- [ ] LLM or coding agent used: <!-- "none", or the model and version, e.g. "Claude Opus 5.5 via Claude Code" -->
++- [ ] If one was used, I, a human, have reviewed, understood and tested every changed line
+ 
+ **PR Checklist**
+ 
+ <!-- Please fill in the appropriate checklist below (delete whatever is not relevant). These are the most common things requested on pull requests (PRs). -->
+ 
+--   [ ] Referenced issue is linked
+--   [ ] If you've fixed a bug or added code that should be tested, add tests!
+--   [ ] Documentation in `docs` is updated
++- [ ] Referenced issue is linked
++- [ ] If you've fixed a bug or added code that should be tested, add tests!
++- [ ] Documentation in `docs` is updated
+ 
+ **Description of changes**
+ 
+diff --git a/.panache.toml b/.panache.toml
+new file mode 100644
+index 00000000..cd9509d6
+--- /dev/null
++++ b/.panache.toml
+@@ -0,0 +1,14 @@
++#:schema https://panache.bz/panache.schema.json
++flavor = "myst"
++
++[format]
++wrap = "preserve"
++smart-punctuation = "unicode"
++tab-stops = "preserve"
++
++# MyST syntax extensions from `scverse_doc.config.MYST_ENABLE_EXTENSIONS`
++[extensions]
++myst-colon-fence = true  # colon_fence
++definition-lists = true  # deflist
++tex-math-dollars = true  # dollarmath, amsmath
++raw-html = true          # html_image, html_admonition
+diff --git a/.pre-commit-config.yaml b/.pre-commit-config.yaml
+index a9db021b..345cd6e3 100644
+--- a/.pre-commit-config.yaml
++++ b/.pre-commit-config.yaml
+@@ -13,6 +13,10 @@ repos:
+       hooks:
+           - id: biome-format
+             exclude: ^\.cruft\.json$ # inconsistent indentation with cruft - file never to be modified manually.
++    - repo: https://github.com/jolars/panache-pre-commit
++      rev: v3.18.0
++      hooks:
++          - id: panache-format
+     - repo: https://github.com/astral-sh/ruff-pre-commit
+       rev: 25bcf95026b96e2dd3c0aec3090c3d6ef6ca2e6c # frozen: v0.17.3
+       hooks:
+diff --git a/README.md b/README.md
+index 55385a78..be4d3260 100644
+--- a/README.md
++++ b/README.md
+@@ -12,7 +12,7 @@
+ Pertpy is a scverse ecosystem framework for analyzing large-scale single-cell perturbation experiments.
+ It provides tools for harmonizing perturbation datasets, automating metadata annotation, calculating perturbation distances, and efficiently analyzing how cells respond to various stimuli like genetic modifications, drug treatments, and environmental changes.
+ 
+-Please read our associated manuscript ["Pertpy: an end-to-end framework for perturbation analysis"](https://www.nature.com/articles/s41592-025-02909-7).
++Please read our associated manuscript [“Pertpy: an end-to-end framework for perturbation analysis”](https://www.nature.com/articles/s41592-025-02909-7).
+ 
+ ![fig1](https://github.com/user-attachments/assets/d2e32d69-b767-4be3-a938-77a9dce45d3f)
+ 
+@@ -25,7 +25,7 @@ Please read the [documentation](https://pertpy.scverse.org/) for installation in
+ We recommend installing and running pertpy on a recent version of Linux (e.g. Ubuntu 24.04 LTS).
+ No particular hardware beyond a standard laptop is required.
+ 
+-You can install _pertpy_ in less than a minute via [pip] from [PyPI]:
++You can install *pertpy* in less than a minute via [pip] from [PyPI]:
+ 
+ ```console
+ pip install pertpy
+@@ -65,13 +65,13 @@ pip install 'pertpy[tcoda]'
+ 
+ ### milo
+ 
+-milo requires either the "de" extra for the "pydeseq2" solver:
++milo requires either the “de” extra for the “pydeseq2” solver:
+ 
+ ```console
+ pip install 'pertpy[de]'
+ ```
+ 
+-or, edger, statmod, and rpy2 for the "edger" solver:
++or, edger, statmod, and rpy2 for the “edger” solver:
+ 
+ ```R
+ BiocManager::install("edgeR")
+@@ -111,6 +111,6 @@ If you like scverse® and want to support our mission, please consider making a
+   <img
+     src="https://raw.githubusercontent.com/numfocus/templates/master/images/numfocus-logo.png"
+     width="200"
+-  >
++>
+ </a>
+ </div>
+diff --git a/biome.jsonc b/biome.jsonc
+index 7068f4a4..3a493365 100644
+--- a/biome.jsonc
++++ b/biome.jsonc
+@@ -2,6 +2,7 @@
+     "$schema": "https://biomejs.dev/schemas/2.6.3/schema.json",
+     "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+     "formatter": { "useEditorconfig": true },
++    "markdown": { "formatter": { "enabled": false } }, // handled by panache
+     "overrides": [
+         {
+             "includes": ["docs/tutorials.md"],
+diff --git a/docs/api/datasets_index.md b/docs/api/datasets_index.md
+index bab9237b..2b9a1833 100644
+--- a/docs/api/datasets_index.md
++++ b/docs/api/datasets_index.md
+@@ -9,62 +9,62 @@ Many of the datasets originate from [scperturb](http://projects.sanderlab.org/sc
+ 
+ ```{eval-rst}
+ .. autosummary::
+-    :toctree: data
++   :toctree: data
+ 
+-    data.adamson_2016_pilot
+-    data.adamson_2016_upr_epistasis
+-    data.adamson_2016_upr_perturb_seq
+-    data.aissa_2021
+-    data.bhattacherjee
+-    data.burczynski_crohn
+-    data.chang_2021
+-    data.combosciplex
+-    data.cinemaot_example
+-    data.datlinger_2017
+-    data.datlinger_2021
+-    data.dialogue_example
+-    data.distance_example
+-    data.dixit_2016
+-    data.dixit_2016_raw
+-    data.dong_2023
+-    data.frangieh_2021
+-    data.frangieh_2021_protein
+-    data.frangieh_2021_raw
+-    data.frangieh_2021_rna
+-    data.gasperini_2019_atscale
+-    data.gasperini_2019_highmoi
+-    data.gasperini_2019_lowmoi
+-    data.gehring_2019
+-    data.haber_2017_regions
+-    data.hagai_2018
+-    data.kang_2018
+-    data.mcfarland_2020
+-    data.norman_2019
+-    data.norman_2019_raw
+-    data.papalexi_2021
+-    data.replogle_2022_k562_essential
+-    data.replogle_2022_k562_gwps
+-    data.replogle_2022_rpe1
+-    data.sc_sim_augur
+-    data.schiebinger_2019_16day
+-    data.schiebinger_2019_18day
+-    data.schraivogel_2020_tap_screen_chr8
+-    data.schraivogel_2020_tap_screen_chr11
+-    data.sciplex_gxe1
+-    data.sciplex3_raw
+-    data.shifrut_2018
+-    data.smillie_2019
+-    data.srivatsan_2020_sciplex2
+-    data.srivatsan_2020_sciplex3
+-    data.srivatsan_2020_sciplex4
+-    data.stephenson_2021_subsampled
+-    data.tasccoda_example
+-    data.tian_2019_day7neuron
+-    data.tian_2019_ipsc
+-    data.tian_2021_crispra
+-    data.tian_2021_crispri
+-    data.weinreb_2020
+-    data.xie_2017
+-    data.zhao_2021
+-    data.zhang_2021
++   data.adamson_2016_pilot
++   data.adamson_2016_upr_epistasis
++   data.adamson_2016_upr_perturb_seq
++   data.aissa_2021
++   data.bhattacherjee
++   data.burczynski_crohn
++   data.chang_2021
++   data.combosciplex
++   data.cinemaot_example
++   data.datlinger_2017
++   data.datlinger_2021
++   data.dialogue_example
++   data.distance_example
++   data.dixit_2016
++   data.dixit_2016_raw
++   data.dong_2023
++   data.frangieh_2021
++   data.frangieh_2021_protein
++   data.frangieh_2021_raw
++   data.frangieh_2021_rna
++   data.gasperini_2019_atscale
++   data.gasperini_2019_highmoi
++   data.gasperini_2019_lowmoi
++   data.gehring_2019
++   data.haber_2017_regions
++   data.hagai_2018
++   data.kang_2018
++   data.mcfarland_2020
++   data.norman_2019
++   data.norman_2019_raw
++   data.papalexi_2021
++   data.replogle_2022_k562_essential
++   data.replogle_2022_k562_gwps
++   data.replogle_2022_rpe1
++   data.sc_sim_augur
++   data.schiebinger_2019_16day
++   data.schiebinger_2019_18day
++   data.schraivogel_2020_tap_screen_chr8
++   data.schraivogel_2020_tap_screen_chr11
++   data.sciplex_gxe1
++   data.sciplex3_raw
++   data.shifrut_2018
++   data.smillie_2019
++   data.srivatsan_2020_sciplex2
++   data.srivatsan_2020_sciplex3
++   data.srivatsan_2020_sciplex4
++   data.stephenson_2021_subsampled
++   data.tasccoda_example
++   data.tian_2019_day7neuron
++   data.tian_2019_ipsc
++   data.tian_2021_crispra
++   data.tian_2021_crispri
++   data.weinreb_2020
++   data.xie_2017
++   data.zhao_2021
++   data.zhang_2021
+ ```
+diff --git a/docs/api/metadata_index.md b/docs/api/metadata_index.md
+index 32017816..8db5050d 100644
+--- a/docs/api/metadata_index.md
++++ b/docs/api/metadata_index.md
+@@ -14,9 +14,9 @@ including cell line annotation, bulk RNA and protein expression data.
+ 
+ Available databases for cell line metadata:
+ 
+--   [The Cancer Dependency Map Project at Broad](https://depmap.org/portal/)
+--   [The Cancer Dependency Map Project at Sanger](https://depmap.sanger.ac.uk/)
+--   [Genomics of Drug Sensitivity in Cancer (GDSC)](https://www.cancerrxgene.org/)
++- [The Cancer Dependency Map Project at Broad](https://depmap.org/portal/)
++- [The Cancer Dependency Map Project at Sanger](https://depmap.sanger.ac.uk/)
++- [Genomics of Drug Sensitivity in Cancer (GDSC)](https://www.cancerrxgene.org/)
+ 
+ ## Compound
+ 
+@@ -24,7 +24,7 @@ The Compound module enables the retrieval of various types of information relate
+ 
+ Available databases for compound metadata:
+ 
+--   [PubChem](https://pubchem.ncbi.nlm.nih.gov/)
++- [PubChem](https://pubchem.ncbi.nlm.nih.gov/)
+ 
+ ## Mechanism of Action
+ 
+@@ -32,7 +32,7 @@ This module aims to retrieve metadata of mechanism of action studies related to
+ 
+ Available databases for mechanism of action metadata:
+ 
+--   [CLUE](https://clue.io/)
++- [CLUE](https://clue.io/)
+ 
+ ## Drug
+ 
+@@ -40,7 +40,7 @@ This module allows for the retrieval of Drug target information.
+ 
+ Available databases for drug metadata:
+ 
+--   [chembl](https://www.ebi.ac.uk/chembl/)
++- [chembl](https://www.ebi.ac.uk/chembl/)
+ 
+ ## Cytokine
+ 
+@@ -49,17 +49,17 @@ They hold the genes that 90 cytokines up- or downregulate in 24 cell types of hu
+ 
+ Available databases for cytokine metadata:
+ 
+--   [Human Cytokine Dictionary](https://doi.org/10.64898/2025.12.12.693897)
++- [Human Cytokine Dictionary](https://doi.org/10.64898/2025.12.12.693897)
+ 
+ ```{eval-rst}
+ .. autosummary::
+-    :toctree: metadata
+-    :recursive:
+-
+-    metadata.CellLine
+-    metadata.Compound
+-    metadata.Cytokine
+-    metadata.Moa
+-    metadata.Drug
+-    metadata.LookUp
++   :toctree: metadata
++   :recursive:
++
++   metadata.CellLine
++   metadata.Compound
++   metadata.Cytokine
++   metadata.Moa
++   metadata.Drug
++   metadata.LookUp
+ ```
+diff --git a/docs/api/preprocessing_index.md b/docs/api/preprocessing_index.md
+index c5fff459..016465d5 100644
+--- a/docs/api/preprocessing_index.md
++++ b/docs/api/preprocessing_index.md
+@@ -11,10 +11,10 @@ pertpy provides a simple function to assign guides based on thresholds and a Gau
+ 
+ ```{eval-rst}
+ .. autosummary::
+-    :toctree: preprocessing
+-    :nosignatures:
++   :toctree: preprocessing
++   :nosignatures:
+ 
+-    preprocessing.GuideAssignment
++   preprocessing.GuideAssignment
+ ```
+ 
+ :::{note}
+diff --git a/docs/api/tools_index.md b/docs/api/tools_index.md
+index 8d956e2c..85eab76d 100644
+--- a/docs/api/tools_index.md
++++ b/docs/api/tools_index.md
+@@ -16,15 +16,15 @@ Pertpy enables differential gene expression tests through a common interface tha
+ 
+ ```{eval-rst}
+ .. autosummary::
+-    :toctree: preprocessing
+-    :nosignatures:
+-
+-    tools.PyDESeq2
+-    tools.EdgeR
+-    tools.WilcoxonTest
+-    tools.TTest
+-    tools.PermutationTest
+-    tools.Statsmodels
++   :toctree: preprocessing
++   :nosignatures:
++
++   tools.PyDESeq2
++   tools.EdgeR
++   tools.WilcoxonTest
++   tools.TTest
++   tools.PermutationTest
++   tools.Statsmodels
+ ```
+ 
+ Example implementation:
+@@ -81,9 +81,9 @@ See [Characterizing the molecular regulation of inhibitory immune checkpoints wi
+ 
+ ```{eval-rst}
+ .. autosummary::
+-    :toctree: tools
++   :toctree: tools
+ 
+-    tools.Mixscape
++   tools.Mixscape
+ ```
+ 
+ Example implementation:
+@@ -110,9 +110,9 @@ Mixscale shares the perturbation signature and differential expression steps wit
+ 
+ ```{eval-rst}
+ .. autosummary::
+-    :toctree: tools
++   :toctree: tools
+ 
+-    tools.Mixscale
++   tools.Mixscale
+ ```
+ 
+ Example implementation:
+@@ -133,7 +133,7 @@ See {doc}`/tutorials/notebooks/perturbation_efficacy` tutorial.
+ Compositional data analysis focuses on identifying and quantifying variations in cell type composition across
+ different conditions or samples to uncover biological differences driven by changes in cellular makeup.
+ 
+-Generally, there's two ways of approaching this question:
++Generally, there’s two ways of approaching this question:
+ 
+ 1. Without labeled groups using graph based approaches
+ 2. With labeled groups using pure statistical approaches
+@@ -149,9 +149,9 @@ See [Differential abundance testing on single-cell data using k-nearest neighbor
+ 
+ ```{eval-rst}
+ .. autosummary::
+-    :toctree: tools
++   :toctree: tools
+ 
+-    tools.Milo
++   tools.Milo
+ ```
+ 
+ Example implementation:
+@@ -196,10 +196,10 @@ See [scCODA is a Bayesian model for compositional single-cell data analysis](htt
+ 
+ ```{eval-rst}
+ .. autosummary::
+-    :toctree: tools
++   :toctree: tools
+ 
+-    tools.Sccoda
+-    tools.Tasccoda
++   tools.Sccoda
++   tools.Tasccoda
+ ```
+ 
+ Example implementation:
+@@ -253,9 +253,9 @@ See [DIALOGUE maps multicellular programs in tissue from single-cell or spatial
+ 
+ ```{eval-rst}
+ .. autosummary::
+-    :toctree: tools
++   :toctree: tools
+ 
+-    tools.Dialogue
++   tools.Dialogue
+ ```
+ 
+ Example implementation:
+@@ -297,9 +297,9 @@ The same enrichment interface can also score CMap-style signature reversal on pe
+ 
+ ```{eval-rst}
+ .. autosummary::
+-    :toctree: tools
++   :toctree: tools
+ 
+-    tools.Enrichment
++   tools.Enrichment
+ ```
+ 
+ Example implementation:
+@@ -373,10 +373,10 @@ For more details, we refer to [scPerturb: harmonized single-cell perturbation da
+ 
+ ```{eval-rst}
+ .. autosummary::
+-    :toctree: tools
++   :toctree: tools
+ 
+-    tools.Distance
+-    tools.DistanceTest
++   tools.Distance
++   tools.DistanceTest
+ ```
+ 
+ `Distance` supports a broad range of metrics including `edistance`, `mmd`, `wasserstein`,
+@@ -434,10 +434,10 @@ See {doc}`/tutorials/notebooks/augur` tutorial.
+ 
+ ```{eval-rst}
+ .. autosummary::
+-    :toctree: tools
+-    :nosignatures:
++   :toctree: tools
++   :nosignatures:
+ 
+-    tools.Augur
++   tools.Augur
+ ```
+ 
+ ### Gene expression prediction with scGen
+@@ -448,9 +448,9 @@ See [scGen predicts single-cell perturbation responses](https://www.nature.com/a
+ 
+ ```{eval-rst}
+ .. autosummary::
+-    :toctree: tools
++   :toctree: tools
+ 
+-    tools.Scgen
++   tools.Scgen
+ ```
+ 
+ Example implementation:
+@@ -483,9 +483,9 @@ See [Causal identification of single-cell experimental perturbation effects with
+ 
+ ```{eval-rst}
+ .. autosummary::
+-    :toctree: tools
++   :toctree: tools
+ 
+-    tools.Cinemaot
++   tools.Cinemaot
+ ```
+ 
+ Example implementation:
+@@ -520,18 +520,18 @@ The shared base class additionally provides operations on the resulting spaces s
+ 
+ ```{eval-rst}
+ .. autosummary::
+-    :toctree: tools
+-
+-    tools.PseudobulkSpace
+-    tools.CentroidSpace
+-    tools.DistanceSpace
+-    tools.EmbeddingSpace
+-    tools.LRClassifierSpace
+-    tools.MLPClassifierSpace
+-    tools.KMeansSpace
+-    tools.HDBSCANSpace
+-    tools.ClusteringSpace
+-    tools.PerturbationComparison
++   :toctree: tools
++
++   tools.PseudobulkSpace
++   tools.CentroidSpace
++   tools.DistanceSpace
++   tools.EmbeddingSpace
++   tools.LRClassifierSpace
++   tools.MLPClassifierSpace
++   tools.KMeansSpace
++   tools.HDBSCANSpace
++   tools.ClusteringSpace
++   tools.PerturbationComparison
+ ```
+ 
+ Example implementation:
+diff --git a/docs/contributing.md b/docs/contributing.md
+index 08a95b77..477f24a9 100644
+--- a/docs/contributing.md
++++ b/docs/contributing.md
+@@ -11,7 +11,6 @@ the [scientific Python tutorials][], or the {doc}`scanpy developer guide <scanpy
+ [scientific Python tutorials]: https://learn.scientific-python.org/development/tutorials/
+ 
+ :::{tip} The _hatch_ project manager
+-
+ We highly recommend to familiarize yourself with [`hatch`][hatch].
+ Hatch is a Python project manager that
+ 
+@@ -22,19 +21,17 @@ Hatch is a Python project manager that
+ 
+ While the project is setup with `hatch` in mind,
+ it is still possible to use different tools to manage dependencies, such as `uv` or `pip`.
+-
+ :::
+ 
+ [hatch]: https://hatch.pypa.io/latest/
+ 
+ ## Installing dev dependencies
+ 
+-In addition to the packages needed to _use_ this package,
++In addition to the packages needed to *use* this package,
+ you need additional python packages to [run tests](writing-tests) and [build the documentation](docs-building).
+ 
+ :::::{tabs}
+ ::::{group-tab} Hatch
+-
+ On the command line, you typically interact with hatch through its command line interface (CLI).
+ Running one of the following commands will automatically resolve the environments for testing and
+ building the documentation in the background:
+@@ -90,11 +87,9 @@ In case you are using VScode, now open the command palette (Ctrl+Shift+P) and se
+ Choose `Enter Interpreter Path` and paste the path to the virtual environment from above.
+ 
+ In this future, this may become easier through a hatch vscode extension.
+-
+ ::::
+ 
+ ::::{group-tab} uv
+-
+ A popular choice for managing virtual environments is [uv][].
+ The main disadvantage compared to hatch is that it supports only a single environment per project at a time,
+ which requires you to mix the dependencies for running tests and building docs.
+@@ -109,11 +104,9 @@ uv sync --all-extras
+ ```
+ 
+ The `.venv` directory is typically automatically discovered by IDEs such as VS Code.
+-
+ ::::
+ 
+ ::::{group-tab} Pip
+-
+ Pip is nowadays mostly superseded by environment manager such as [hatch][].
+ However, for the sake of completeness, and since it’s ubiquitously available,
+ we describe how you can manage environments manually using `pip`:
+@@ -125,7 +118,6 @@ pip install -e ".[dev,test,doc]"
+ ```
+ 
+ The `.venv` directory is typically automatically discovered by IDEs such as VS Code.
+-
+ ::::
+ :::::
+ 
+@@ -147,7 +139,7 @@ in the root of the repository.
+ Pre-commit will automatically download all dependencies when it is run for the first time.
+ 
+ Alternatively, you can rely on the [pre-commit.ci][] service enabled on GitHub.
+-If you didn't run `pre-commit` before pushing changes to GitHub it will automatically commit fixes to your pull request, or show an error message.
++If you didn’t run `pre-commit` before pushing changes to GitHub it will automatically commit fixes to your pull request, or show an error message.
+ 
+ If pre-commit.ci added a commit on a branch you still have been working on locally, simply use
+ 
+@@ -162,7 +154,7 @@ One of the hooks type-checks `pertpy` and `tests` with [mypy][], which the `Pre-
+ Type hints are optional: mypy only checks functions that carry annotations.
+ To silence a specific line, append a `# type: ignore[<error-code>]` comment.
+ 
+-Finally, most editors have an _autoformat on save_ feature.
++Finally, most editors have an *autoformat on save* feature.
+ Consider enabling this option for [ruff][ruff-editors] and [biome][biome-editors].
+ 
+ [mypy]: https://mypy.readthedocs.io/
+@@ -190,30 +182,24 @@ Alternatively, you can run all tests from the command line by executing
+ 
+ :::::{tabs}
+ ::::{group-tab} Hatch
+-
+ ```bash
+ hatch test  # test with the highest supported Python version
+ # or
+ hatch test --all  # test with all supported Python versions
+ ```
+-
+ ::::
+ 
+ ::::{group-tab} uv
+-
+ ```bash
+ uv run pytest
+ ```
+-
+ ::::
+ 
+ ::::{group-tab} Pip
+-
+ ```bash
+ source .venv/bin/activate
+ pytest
+ ```
+-
+ ::::
+ :::::
+ 
+@@ -226,7 +212,7 @@ in the root of the repository.
+ Continuous integration via GitHub actions will automatically run the tests on all pull requests and test
+ against the minimum and maximum supported Python version.
+ 
+-Additionally, there's a CI job that tests against pre-releases of all dependencies (if there are any).
++Additionally, there’s a CI job that tests against pre-releases of all dependencies (if there are any).
+ The purpose of this check is to detect incompatibilities of new package versions early on and
+ gives you time to fix the issue or reach out to the developers of the dependency before the package
+ is released to a wider audience.
+@@ -250,7 +236,7 @@ Choose the tag according to [Semantic Versioning][semver], in brief
+ >
+ > Additional labels for pre-release and build metadata are available as extensions to the MAJOR.MINOR.PATCH format.
+ 
+-Navigate to the "Releases" page of this project on GitHub, specify `X.X.X` as a tag name and create a release.
++Navigate to the “Releases” page of this project on GitHub, specify `X.X.X` as a tag name and create a release.
+ For more information, see [managing GitHub releases][].
+ This will automatically create a git tag and trigger a Github workflow that creates a release on [PyPI][].
+ 
+@@ -302,35 +288,28 @@ These notebooks come from [pert-tutorials](https://github.com/scverse/pertpy-tut
+ 
+ :::::{tabs}
+ ::::{group-tab} Hatch
+-
+ ```bash
+ hatch run docs:build
+ hatch run docs:open
+ ```
+-
+ ::::
+ 
+ ::::{group-tab} uv
+-
+ :::::{tabs}
+ ::::{group-tab} Hatch
+-
+ ```bash
+ cd docs
+ uv run sphinx-build -M html . _build -W
+ (xdg-)open _build/html/index.html
+ ```
+-
+ ::::
+ 
+ ::::{group-tab} Pip
+-
+ ```bash
+ source .venv/bin/activate
+ cd docs
+ sphinx-build -M html . _build -W
+ (xdg-)open _build/html/index.html
+ ```
+-
+ ::::
+ :::::
+diff --git a/docs/glossary.md b/docs/glossary.md
+index 4028c553..a4613803 100644
+--- a/docs/glossary.md
++++ b/docs/glossary.md
+@@ -27,7 +27,7 @@ Perturbation efficacy
+   Some cells carry a guide RNA but escape the perturbation; {class}`~pertpy.tools.Mixscape` classifies cells as perturbed or not, and {class}`~pertpy.tools.Mixscale` scores the effect continuously.
+ 
+ Perturbation signature
+-  A cell's expression minus that of its most similar control cells, which removes variation unrelated to the perturbation, such as cell cycle.
++  A cell’s expression minus that of its most similar control cells, which removes variation unrelated to the perturbation, such as cell cycle.
+   {class}`~pertpy.tools.Mixscape` and {class}`~pertpy.tools.Mixscale` work on it.
+ 
+ Pseudobulk
+diff --git a/docs/index.md b/docs/index.md
+index c07c7b71..3f3b05d7 100644
+--- a/docs/index.md
++++ b/docs/index.md
+@@ -9,28 +9,29 @@ For more details, see [Pertpy: an end-to-end framework for perturbation analysis
+ 
+ ```{eval-rst}
+ .. card:: Installation :octicon:`plug;1em;`
+-    :link: installation
+-    :link-type: doc
++   :link: installation
++   :link-type: doc
+ 
+-    New to *pertpy*? Check out the installation guide.
++   New to *pertpy*? Check out the installation guide.
+ ```
+ 
+ ```{eval-rst}
+ .. card:: API reference :octicon:`book;1em;`
+-    :link: api
+-    :link-type: doc
++   :link: api
++   :link-type: doc
+ 
+-    The API reference contains a detailed description of the pertpy API.
++   The API reference contains a detailed description of the pertpy API.
+ ```
+ 
+ ```{eval-rst}
+ .. card:: Tutorials :octicon:`play;1em;`
+-    :link: tutorials
+-    :link-type: doc
++   :link: tutorials
++   :link-type: doc
+ 
+-    The tutorials walk you through real-world applications of pertpy.
++   The tutorials walk you through real-world applications of pertpy.
+ ```
+ 
++<!-- panache-ignore-format-start -->
+ ```{eval-rst}
+ .. card:: Discussion :octicon:`megaphone;1em;`
+     :link: https://discourse.scverse.org/
+@@ -38,7 +39,9 @@ For more details, see [Pertpy: an end-to-end framework for perturbation analysis
+     Need help? Reach out on our forum to get your questions answered!
+ 
+ ```
++<!-- panache-ignore-format-end -->
+ 
++<!-- panache-ignore-format-start -->
+ ```{eval-rst}
+ .. card:: GitHub :octicon:`mark-github;1em;`
+     :link: https://github.com/scverse/pertpy
+@@ -46,6 +49,7 @@ For more details, see [Pertpy: an end-to-end framework for perturbation analysis
+     Found a bug? Interested in improving pertpy? Checkout our GitHub for the latest developments.
+ 
+ ```
++<!-- panache-ignore-format-end -->
+ 
+ ```{toctree}
+ :caption: 'Getting started'
+@@ -114,6 +118,6 @@ If you like scverse® and want to support our mission, please consider making a
+   <img
+     src="https://raw.githubusercontent.com/numfocus/templates/master/images/numfocus-logo.png"
+     width="200"
+-  >
++>
+ </a>
+ </div>
+diff --git a/docs/installation.md b/docs/installation.md
+index 32cb94e2..a88a6f77 100644
+--- a/docs/installation.md
++++ b/docs/installation.md
+@@ -1,5 +1,4 @@
+ ```{highlight} shell
+-
+ ```
+ 
+ # Installation
+@@ -15,7 +14,7 @@ pip install pertpy
+ ```
+ 
+ This is the preferred method to install pertpy, as it will always install the most recent stable release.
+-If you don't have [pip] installed, this [Python installation guide] can guide you through the process.
++If you don’t have [pip] installed, this [Python installation guide] can guide you through the process.
+ 
+ ### conda-forge
+ 
+@@ -57,13 +56,13 @@ pip install rpy2
+ 
+ #### milo
+ 
+-milo requires either the "de" extra for the "pydeseq2" solver:
++milo requires either the “de” extra for the “pydeseq2” solver:
+ 
+ ```console
+ pip install 'pertpy[de,milo-edger]'
+ ```
+ 
+-or, edger, statmod, and rpy2 for the "edger" solver:
++or, edger, statmod, and rpy2 for the “edger” solver:
+ 
+ ```R
+ BiocManager::install("edgeR")
+diff --git a/docs/quickstart.md b/docs/quickstart.md
+index ed7a39bd..6bc3af20 100644
+--- a/docs/quickstart.md
++++ b/docs/quickstart.md
+@@ -20,20 +20,20 @@ Some tools need optional dependencies, which {doc}`installation` lists.
+ 
+ ## Find the right tool
+ 
+-| Question                                                    | Tools                                                                                                                                  | Tutorial                                                                        |
+-| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+-| Which guide RNAs did each cell receive?                     | {class}`~pertpy.preprocessing.GuideAssignment`                                                                                         | {doc}`tutorials/notebooks/guide_rna_assignment`                                 |
+-| Which cells were actually perturbed?                        | {class}`~pertpy.tools.Mixscape`, {class}`~pertpy.tools.Mixscale`                                                                       | {doc}`tutorials/notebooks/perturbation_efficacy`                                |
+-| Which genes change between conditions?                      | {class}`~pertpy.tools.PyDESeq2`, {class}`~pertpy.tools.EdgeR`, {class}`~pertpy.tools.Statsmodels`, {class}`~pertpy.tools.WilcoxonTest` | {doc}`tutorials/notebooks/differential_gene_expression`                         |
+-| Did the cell type composition change?                       | {class}`~pertpy.tools.Sccoda`, {class}`~pertpy.tools.Tasccoda`                                                                         | {doc}`tutorials/notebooks/sccoda`, {doc}`tutorials/notebooks/tasccoda`          |
+-| Did cell states change in abundance, without cell types?    | {class}`~pertpy.tools.Milo`                                                                                                            | {doc}`tutorials/notebooks/milo`                                                 |
+-| Which cell types respond most strongly?                     | {class}`~pertpy.tools.Augur`                                                                                                           | {doc}`tutorials/notebooks/augur`                                                |
+-| Which programs are coordinated across cell types?           | {class}`~pertpy.tools.Dialogue`                                                                                                        | {doc}`tutorials/notebooks/dialogue`                                             |
+-| Which pathways or drug targets are enriched?                | {class}`~pertpy.tools.Enrichment`                                                                                                      | {doc}`tutorials/notebooks/enrichment`                                           |
+-| How different are two perturbations, and is it significant? | {class}`~pertpy.tools.Distance`, {class}`~pertpy.tools.DistanceTest`                                                                   | {doc}`tutorials/notebooks/distances`, {doc}`tutorials/notebooks/distance_tests` |
+-| How do perturbations compare as a whole?                    | {class}`~pertpy.tools.PseudobulkSpace`, {class}`~pertpy.tools.CentroidSpace`                                                           | {doc}`tutorials/notebooks/perturbation_space`                                   |
+-| What is the effect after removing confounding variation?    | {class}`~pertpy.tools.Cinemaot`                                                                                                        | {doc}`tutorials/notebooks/cinemaot`                                             |
+-| How would an unseen cell type respond?                      | {class}`~pertpy.tools.Scgen`                                                                                                           | {doc}`tutorials/notebooks/scgen_perturbation_prediction`                        |
+-| What are the cell lines, compounds and drugs in my data?    | {class}`~pertpy.metadata.CellLine`, {class}`~pertpy.metadata.Compound`, {class}`~pertpy.metadata.Drug`, {class}`~pertpy.metadata.Moa`  | {doc}`tutorials/notebooks/metadata_annotation`                                  |
++  | Question                                                    | Tools                                                                                                                                  | Tutorial                                                                        |
++  | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
++  | Which guide RNAs did each cell receive?                     | {class}`~pertpy.preprocessing.GuideAssignment`                                                                                         | {doc}`tutorials/notebooks/guide_rna_assignment`                                 |
++  | Which cells were actually perturbed?                        | {class}`~pertpy.tools.Mixscape`, {class}`~pertpy.tools.Mixscale`                                                                       | {doc}`tutorials/notebooks/perturbation_efficacy`                                |
++  | Which genes change between conditions?                      | {class}`~pertpy.tools.PyDESeq2`, {class}`~pertpy.tools.EdgeR`, {class}`~pertpy.tools.Statsmodels`, {class}`~pertpy.tools.WilcoxonTest` | {doc}`tutorials/notebooks/differential_gene_expression`                         |
++  | Did the cell type composition change?                       | {class}`~pertpy.tools.Sccoda`, {class}`~pertpy.tools.Tasccoda`                                                                         | {doc}`tutorials/notebooks/sccoda`, {doc}`tutorials/notebooks/tasccoda`          |
++  | Did cell states change in abundance, without cell types?    | {class}`~pertpy.tools.Milo`                                                                                                            | {doc}`tutorials/notebooks/milo`                                                 |
++  | Which cell types respond most strongly?                     | {class}`~pertpy.tools.Augur`                                                                                                           | {doc}`tutorials/notebooks/augur`                                                |
++  | Which programs are coordinated across cell types?           | {class}`~pertpy.tools.Dialogue`                                                                                                        | {doc}`tutorials/notebooks/dialogue`                                             |
++  | Which pathways or drug targets are enriched?                | {class}`~pertpy.tools.Enrichment`                                                                                                      | {doc}`tutorials/notebooks/enrichment`                                           |
++  | How different are two perturbations, and is it significant? | {class}`~pertpy.tools.Distance`, {class}`~pertpy.tools.DistanceTest`                                                                   | {doc}`tutorials/notebooks/distances`, {doc}`tutorials/notebooks/distance_tests` |
++  | How do perturbations compare as a whole?                    | {class}`~pertpy.tools.PseudobulkSpace`, {class}`~pertpy.tools.CentroidSpace`                                                           | {doc}`tutorials/notebooks/perturbation_space`                                   |
++  | What is the effect after removing confounding variation?    | {class}`~pertpy.tools.Cinemaot`                                                                                                        | {doc}`tutorials/notebooks/cinemaot`                                             |
++  | How would an unseen cell type respond?                      | {class}`~pertpy.tools.Scgen`                                                                                                           | {doc}`tutorials/notebooks/scgen_perturbation_prediction`                        |
++  | What are the cell lines, compounds and drugs in my data?    | {class}`~pertpy.metadata.CellLine`, {class}`~pertpy.metadata.Compound`, {class}`~pertpy.metadata.Drug`, {class}`~pertpy.metadata.Moa`  | {doc}`tutorials/notebooks/metadata_annotation`                                  |
+ 
+ The {doc}`usecases` combine several of these tools on published perturbation studies.

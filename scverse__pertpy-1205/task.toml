@@ -1,0 +1,75 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1205"
+description = "style: switch to panache markdown formatting"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "f7438c140ff8c21708d66a0292a807ea8441308a"
+reference = "https://github.com/scverse/pertpy/pull/1205"
+source_access = "auto"
+built_at = "2026-11-15T16:36:40.654421+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:477062dfa4051ab2e0788fa135be41436d97612fae4b54961b7165a62cd3f808"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-11-12T17:28:29Z"
+diff_format = "unified"
+context_files = [
+    ".github/pull_request_template.md",
+    ".panache.toml",
+    ".pre-commit-config.yaml",
+    "README.md",
+    "biome.jsonc",
+    "docs/api/datasets_index.md",
+    "docs/api/metadata_index.md",
+    "docs/api/preprocessing_index.md",
+    "docs/api/tools_index.md",
+    "docs/contributing.md",
+    "docs/glossary.md",
+    "docs/index.md",
+    "docs/installation.md",
+    "docs/quickstart.md",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 375
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

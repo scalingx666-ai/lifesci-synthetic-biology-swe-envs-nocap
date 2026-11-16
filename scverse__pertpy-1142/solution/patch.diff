@@ -1,0 +1,518 @@
+diff --git a/src/pertpy/metadata/_compound.py b/src/pertpy/metadata/_compound.py
+index b9da3e7a..b539d36c 100644
+--- a/src/pertpy/metadata/_compound.py
++++ b/src/pertpy/metadata/_compound.py
+@@ -1,5 +1,9 @@
+ from __future__ import annotations
+ 
++import threading
++import time
++from concurrent.futures import ThreadPoolExecutor
++from functools import partial
+ from typing import TYPE_CHECKING, Literal
+ 
+ import pandas as pd
+@@ -12,6 +16,49 @@
+ if TYPE_CHECKING:
+     from anndata import AnnData
+ 
++_PUBCHEM_REQUESTS_PER_SECOND = 5
++
++
++class _Throttle:
++    """Space out the calls made from any thread to at most ``rate`` per second."""
++
++    def __init__(self, rate: float):
++        self._interval = 1 / rate
++        self._lock = threading.Lock()
++        self._next_call = time.monotonic()
++
++    def __call__(self) -> None:
++        with self._lock:
++            now = time.monotonic()
++            delay = self._next_call - now
++            self._next_call = max(now, self._next_call) + self._interval
++        if delay > 0:
++            time.sleep(delay)
++
++
++def _fetch_compound(
++    compound: str, query_id_type: Literal["name", "cid"], throttle: _Throttle
++) -> list[str | int | None] | None:
++    """Fetch the PubChem name, CID and SMILES of a compound, or None if PubChem does not know it."""
++    import pubchempy as pcp
++
++    throttle()
++    if query_id_type == "name":
++        cids = pcp.get_compounds(compound, "name")
++        if len(cids) == 0:
++            return None
++        throttle()
++        # If the name matches the first synonym offered by PubChem (outside of capitalization),
++        # it is not changed (outside of capitalization). Otherwise, it is replaced with the first synonym.
++        return [cids[0].synonyms[0], cids[0].cid, cids[0].canonical_smiles]
++    try:
++        cid = pcp.Compound.from_cid(compound)  # type: ignore[arg-type]
++    except pcp.BadRequestError:
++        # pubchempy throws badrequest if a cid is not found
++        return None
++    throttle()
++    return [cid.synonyms[0], compound, cid.canonical_smiles]
++
+ 
+ class Compound(MetaData):
+     """Utilities to fetch metadata for compounds."""
+@@ -45,34 +92,12 @@ def annotate_compounds(
+         if query_id not in adata.obs.columns:
+             raise ValueError(f"The requested query_id {query_id} is not in `adata.obs`.\n Please check again.")
+ 
+-        import pubchempy as pcp
+-
+-        query_dict = {}
+-        not_matched_identifiers = []
+-        for compound in cast_frame(adata.obs)[query_id].dropna().astype(str).unique():
+-            if query_id_type == "name":
+-                cids = pcp.get_compounds(compound, "name")
+-                if len(cids) == 0:  # search did not work
+-                    not_matched_identifiers.append(compound)
+-                if len(cids) >= 1:
+-                    # If the name matches the first synonym offered by PubChem (outside of capitalization),
+-                    # it is not changed (outside of capitalization). Otherwise, it is replaced with the first synonym.
+-                    query_dict[compound] = [
+-                        cids[0].synonyms[0],
+-                        cids[0].cid,
+-                        cids[0].canonical_smiles,
+-                    ]
+-            else:
+-                try:
+-                    cid = pcp.Compound.from_cid(compound)
+-                    query_dict[compound] = [
+-                        cid.synonyms[0],
+-                        compound,
+-                        cid.canonical_smiles,
+-                    ]
+-                except pcp.BadRequestError:
+-                    # pubchempy throws badrequest if a cid is not found
+-                    not_matched_identifiers.append(compound)
++        compounds = cast_frame(adata.obs)[query_id].dropna().astype(str).unique()
++        fetch = partial(_fetch_compound, query_id_type=query_id_type, throttle=_Throttle(_PUBCHEM_REQUESTS_PER_SECOND))
++        with ThreadPoolExecutor(max_workers=_PUBCHEM_REQUESTS_PER_SECOND) as pool:
++            fetched = list(pool.map(fetch, compounds))
++        query_dict = {compound: info for compound, info in zip(compounds, fetched, strict=True) if info is not None}
++        not_matched_identifiers = [compound for compound, info in zip(compounds, fetched, strict=True) if info is None]
+ 
+         identifier_num_all = len(adata.obs[query_id].unique())
+         self._warn_unmatch(
+diff --git a/src/pertpy/tools/_perturbation_space/_clustering.py b/src/pertpy/tools/_perturbation_space/_clustering.py
+index 7189c78f..f68b504f 100644
+--- a/src/pertpy/tools/_perturbation_space/_clustering.py
++++ b/src/pertpy/tools/_perturbation_space/_clustering.py
+@@ -2,8 +2,6 @@
+ 
+ from typing import TYPE_CHECKING
+ 
+-from sklearn.metrics import pairwise_distances
+-
+ from pertpy.tools._perturbation_space._perturbation_space import PerturbationSpace, _resolve_matrix
+ 
+ if TYPE_CHECKING:
+@@ -81,17 +79,15 @@ def evaluate_clustering(
+                 kwargs.setdefault("random_state", None)
+ 
+                 if "distances" in kwargs:
+-                    distances = kwargs["distances"]
++                    data, data_metric = kwargs["distances"], "precomputed"
+                 else:
+-                    distances = pairwise_distances(
+-                        _resolve_matrix(adata, layer_key=layer_key, embedding_key=embedding_key),
+-                        metric=kwargs["metric"],
+-                    )
++                    data = _resolve_matrix(adata, layer_key=layer_key, embedding_key=embedding_key)
++                    data_metric = kwargs["metric"]
+ 
+                 results["asw"] = asw(
+-                    pairwise_distances=distances,
++                    pairwise_distances=data,
+                     labels=true_labels,
+-                    metric="precomputed",
++                    metric=data_metric,
+                     sample_size=kwargs["sample_size"],
+                     random_state=kwargs["random_state"],
+                 )
+diff --git a/src/pertpy/tools/_perturbation_space/_mlp_classifier.py b/src/pertpy/tools/_perturbation_space/_mlp_classifier.py
+index 92107870..5a1a8663 100644
+--- a/src/pertpy/tools/_perturbation_space/_mlp_classifier.py
++++ b/src/pertpy/tools/_perturbation_space/_mlp_classifier.py
+@@ -15,6 +15,7 @@
+ from sklearn.model_selection import train_test_split
+ from sklearn.preprocessing import OneHotEncoder
+ 
++from pertpy._parallel import _MAX_BLOCK_ELEMENTS
+ from pertpy._types import CSBase, cast_dense, cast_frame
+ from pertpy.tools._perturbation_space._perturbation_space import (
+     PerturbationSpace,
+@@ -106,6 +107,17 @@ def loss_fn(params):
+     return state, loss
+ 
+ 
++@jax.jit
++def train_steps(state: TrainState, batches: tuple[jnp.ndarray, jnp.ndarray], rngs: jnp.ndarray) -> TrainState:
++    """Apply :func:`train_step` to each of the stacked batches in turn."""
++
++    def step(state: TrainState, batch: tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]) -> tuple[TrainState, None]:
++        x, y, rng = batch
++        return train_step(state, (x, y), rng)[0], None
++
++    return jax.lax.scan(step, state, (*batches, rngs))[0]
++
++
+ @jax.jit
+ def val_step(state: TrainState, batch: tuple[jnp.ndarray, jnp.ndarray]) -> float:
+     x, y = batch
+@@ -167,10 +179,16 @@ def __len__(self):
+         return self.data.shape[0]
+ 
+     def get_batch(self, indices: np.ndarray | jnp.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+-        """Returns a batch of samples and corresponding perturbations applied (labels)."""
++        """Returns a batch of samples and corresponding perturbations applied (labels).
++
++        Indices of several batches stacked along the first axis return stacked batches.
++        """
+         idx = np.asarray(indices)
+         data = self.data
+-        batch_data = data[idx].toarray().astype(np.float32, copy=False) if isinstance(data, CSBase) else data[idx]
++        if isinstance(data, CSBase):
++            batch_data = data[idx.ravel()].toarray().astype(np.float32, copy=False).reshape(*idx.shape, -1)
++        else:
++            batch_data = data[idx]
+         return batch_data, self.labels[idx], self.pert_labels[idx]
+ 
+ 
+@@ -313,9 +331,6 @@ def compute(
+         val_dataset = JAXDataset(
+             adata=adata[X_val], target_col="encoded_perturbations", label_col=target_col, layer_key=layer_key
+         )
+-        test_dataset = JAXDataset(
+-            adata=adata[X_test], target_col="encoded_perturbations", label_col=target_col, layer_key=layer_key
+-        )
+         total_dataset = JAXDataset(
+             adata=adata, target_col="encoded_perturbations", label_col=target_col, layer_key=layer_key
+         )
+@@ -341,10 +356,15 @@ def compute(
+         best_val_loss: float | jax.Array = float("inf")
+         patience_counter = 0
+ 
++        step_elements = batch_size * (adata.n_vars + n_classes)
++        steps_per_chunk = max(1, min(n_batches_per_epoch, _MAX_BLOCK_ELEMENTS // step_elements))
++
+         for epoch in range(max_epochs):
+-            for step in range(epoch * n_batches_per_epoch, (epoch + 1) * n_batches_per_epoch):
+-                batch_data, batch_labels, _ = train_dataset.get_batch(train_batches[step])
+-                state, _ = train_step(state, (batch_data, batch_labels), step_rngs[step])
++            epoch_end = (epoch + 1) * n_batches_per_epoch
++            for start in range(epoch * n_batches_per_epoch, epoch_end, steps_per_chunk):
++                steps = slice(start, min(start + steps_per_chunk, epoch_end))
++                batch_data, batch_labels, _ = train_dataset.get_batch(train_batches[steps])
++                state = train_steps(state, (batch_data, batch_labels), step_rngs[steps])
+ 
+             if (epoch + 1) % val_epochs_check == 0:
+                 val_losses = []
+@@ -365,14 +385,6 @@ def compute(
+                 if patience_counter >= patience:
+                     break
+ 
+-        # Test evaluation
+-        test_losses = []
+-        for i in range(0, len(test_dataset), batch_size):
+-            test_indices = np.arange(i, min(i + batch_size, len(test_dataset)))
+-            test_batch_data, test_batch_labels, _ = test_dataset.get_batch(test_indices)
+-            test_loss = val_step(state, (test_batch_data, test_batch_labels))
+-            test_losses.append(test_loss)
+-
+         # Extract embeddings
+         embeddings_list = []
+         for i in range(0, len(total_dataset), batch_size * 2):
+diff --git a/src/pertpy/tools/_perturbation_space/_perturbation_space.py b/src/pertpy/tools/_perturbation_space/_perturbation_space.py
+index 4cc53435..d117eafd 100644
+--- a/src/pertpy/tools/_perturbation_space/_perturbation_space.py
++++ b/src/pertpy/tools/_perturbation_space/_perturbation_space.py
+@@ -1,6 +1,7 @@
+ from __future__ import annotations
+ 
+ import contextlib
++import itertools
+ import warnings
+ from typing import TYPE_CHECKING, Literal
+ 
+@@ -9,6 +10,8 @@
+ import scanpy as sc
+ from anndata import AnnData
+ from fast_array_utils.conv import to_dense
++from joblib import delayed, effective_n_jobs
++from numba import njit, prange
+ from scipy import sparse
+ from scipy.optimize import curve_fit
+ from scipy.special import expit
+@@ -16,6 +19,7 @@
+ 
+ from pertpy._doc import _doc_params, doc_common_plot_args
+ from pertpy._logger import logger
++from pertpy._parallel import _block_slices, _parallelize_with_joblib
+ from pertpy._types import CSBase, cast_dense, cast_frame, cast_matrix
+ 
+ if TYPE_CHECKING:
+@@ -93,16 +97,32 @@ def _vector_distance(u: np.ndarray, v: np.ndarray, metric: str) -> float:
+     raise ValueError(f"Unknown metric {metric!r}. Choose from 'euclidean', 'cosine', 'pearson'.")
+ 
+ 
++def _log_dose(dose: np.ndarray) -> np.ndarray:
++    """Natural logarithm of the doses, with -inf for a zero dose."""
++    log_dose = np.full_like(dose, -np.inf, dtype=float)
++    np.log(dose, out=log_dose, where=dose > 0)
++    return log_dose
++
++
+ def _four_parameter_logistic(
+     dose: np.ndarray, e0: float, emax: float, log_midpoint: float, hill_coefficient: float
+ ) -> np.ndarray:
+     """Calculate predicted responses at the given doses from four-parameter Hill curve parameters."""
+-    log_dose = np.full_like(dose, -np.inf, dtype=float)
+-    np.log(dose, out=log_dose, where=dose > 0)
+-    fraction = expit(hill_coefficient * (log_dose - log_midpoint))
++    fraction = expit(hill_coefficient * (_log_dose(dose) - log_midpoint))
+     return e0 + (emax - e0) * fraction
+ 
+ 
++def _four_parameter_logistic_jacobian(
++    dose: np.ndarray, e0: float, emax: float, log_midpoint: float, hill_coefficient: float
++) -> np.ndarray:
++    """Calculate the derivatives of :func:`_four_parameter_logistic` with respect to each of its parameters."""
++    log_ratio = _log_dose(dose) - log_midpoint
++    fraction = expit(hill_coefficient * log_ratio)
++    sensitivity = (emax - e0) * fraction * (1 - fraction)
++    log_ratio[dose == 0] = 0
++    return np.column_stack((1 - fraction, fraction, -hill_coefficient * sensitivity, sensitivity * log_ratio))
++
++
+ def _fit_hill(doses: np.ndarray, responses: np.ndarray) -> dict[str, float | bool]:
+     """Fit a four-parameter Hill curve to one perturbation's responses."""
+     unique_doses, dose_index = np.unique(doses, return_inverse=True)
+@@ -125,6 +145,7 @@ def _fit_hill(doses: np.ndarray, responses: np.ndarray) -> dict[str, float | boo
+         doses,
+         responses,
+         p0=(e0_guess, emax_guess, np.log(midpoint_guess), 1.0),
++        jac=_four_parameter_logistic_jacobian,
+         bounds=((-np.inf, -np.inf, -np.inf, np.finfo(float).eps), np.inf),
+         absolute_sigma=True,
+         maxfev=20_000,
+@@ -158,31 +179,83 @@ def _fit_hill(doses: np.ndarray, responses: np.ndarray) -> dict[str, float | boo
+     }
+ 
+ 
++def _fit_hill_block(
++    doses: Sequence[np.ndarray], responses: Sequence[np.ndarray]
++) -> list[dict[str, float | bool] | ValueError | RuntimeError]:
++    """Fit a Hill curve per perturbation, returning the error instead for curves that cannot be fit."""
++    fits: list[dict[str, float | bool] | ValueError | RuntimeError] = []
++    for perturbation_doses, perturbation_responses in zip(doses, responses, strict=True):
++        try:
++            fits.append(_fit_hill(perturbation_doses, perturbation_responses))
++        except (ValueError, RuntimeError) as e:
++            fits.append(e)
++    return fits
++
++
++@njit(cache=True)
++def _group_control_sums(
++    matrix: np.ndarray, groups: np.ndarray, control_mask: np.ndarray, sums: np.ndarray
++) -> np.ndarray:
++    """Add up the control rows of every group in row order like ``np.sum(axis=0)``, keeping a lone control row as is."""
++    counts = np.zeros(sums.shape[0], dtype=np.int64)
++    last_rows = np.zeros(sums.shape[0], dtype=np.int64)
++    for i in range(matrix.shape[0]):
++        group = groups[i]
++        if group >= 0 and control_mask[i]:
++            sums[group] += matrix[i]
++            counts[group] += 1
++            last_rows[group] = i
++    for group in range(sums.shape[0]):
++        if counts[group] == 1:
++            sums[group] = matrix[last_rows[group]]
++    return counts
++
++
++@njit(cache=True, parallel=True)
++def _subtract_group_means(
++    matrix: np.ndarray, groups: np.ndarray, means: np.ndarray, has_control: np.ndarray
++) -> np.ndarray:
++    """Subtract its group's mean from every row, leaving rows of groups without control unchanged."""
++    out = np.zeros(matrix.shape, dtype=np.float64)
++    for i in prange(matrix.shape[0]):
++        group = groups[i]
++        if group < 0:
++            continue
++        if has_control[group]:
++            for j in range(matrix.shape[1]):
++                out[i, j] = matrix[i, j] - means[group, j]
++        else:
++            for j in range(matrix.shape[1]):
++                out[i, j] = matrix[i, j]
++    return out
++
++
+ def _subtract_control_mean(
+     matrix: np.ndarray,
+     control_mask: np.ndarray,
+-    group_masks: list[np.ndarray],
++    groups: np.ndarray,
+     *,
+     name: str,
+ ) -> np.ndarray:
+     """Return ``matrix`` with the within-group control mean subtracted from every row.
+ 
++    ``groups`` holds a group code per row, rows coded -1 belong to no group and are set to zero.
+     Groups with no control cells are left untouched and a warning is emitted.
+     """
+-    out = np.zeros_like(matrix, dtype=float)
+-    for mask in group_masks:
+-        in_group = mask & control_mask
+-        n_control = int(in_group.sum())
+-        if n_control == 0:
+-            logger.warning(
+-                f"No control cells found for one group when computing {name!r}; "
+-                "leaving those rows unchanged (no control subtraction applied)."
+-            )
+-            out[mask, :] = matrix[mask, :]
+-            continue
+-        control_mean = matrix[in_group, :] if n_control == 1 else np.mean(matrix[in_group, :], axis=0)
+-        out[mask, :] = matrix[mask, :] - control_mean
+-    return out
++    matrix = np.asarray(matrix)
++    if matrix.dtype == np.float16:
++        matrix = matrix.astype(np.float32)
++    sums = np.zeros(
++        (int(groups.max(initial=-1)) + 1, matrix.shape[1]), dtype=matrix.dtype if matrix.dtype.kind == "f" else float
++    )
++    counts = _group_control_sums(matrix, groups, control_mask, sums)
++    for _ in range(int(np.count_nonzero(counts == 0))):
++        logger.warning(
++            f"No control cells found for one group when computing {name!r}; "
++            "leaving those rows unchanged (no control subtraction applied)."
++        )
++    means = (sums.astype(np.float64) / np.maximum(counts, 1)[:, np.newaxis]).astype(sums.dtype)
++    return _subtract_group_means(matrix, groups, means, counts > 0)
+ 
+ 
+ class PerturbationSpace:
+@@ -249,23 +322,24 @@ def compute_control_diff(
+             adata = adata.copy()
+ 
+         control_mask = (adata.obs[target_col] == reference_key).to_numpy()
+-        if group_col is None:
+-            group_masks: list[np.ndarray] = [np.ones(adata.n_obs, dtype=bool)]
+-        else:
+-            group_masks = [(adata.obs[group_col] == sample).to_numpy() for sample in adata.obs[group_col].unique()]
++        groups = (
++            np.zeros(adata.n_obs, dtype=np.intp)
++            if group_col is None
++            else pd.factorize(cast_frame(adata.obs)[group_col])[0]
++        )
+ 
+         if layer_key:
+             adata.layers[new_layer_key] = _subtract_control_mean(
+-                to_dense(adata.layers[layer_key]), control_mask, group_masks, name=new_layer_key
++                to_dense(adata.layers[layer_key]), control_mask, groups, name=new_layer_key
+             )
+ 
+         if embedding_key:
+             adata.obsm[new_embedding_key] = _subtract_control_mean(
+-                cast_dense(adata.obsm[embedding_key]), control_mask, group_masks, name=new_embedding_key
++                cast_dense(adata.obsm[embedding_key]), control_mask, groups, name=new_embedding_key
+             )
+ 
+         if (not layer_key and not embedding_key) or all_data:
+-            adata.X = _subtract_control_mean(to_dense(adata.X), control_mask, group_masks, name="X")
++            adata.X = _subtract_control_mean(to_dense(adata.X), control_mask, groups, name="X")
+ 
+         if all_data:
+             for local_layer_key in [key for key in adata.layers.keys() if isinstance(key, str)]:  # noqa: SIM118
+@@ -273,7 +347,7 @@ def compute_control_diff(
+                     continue
+                 new_key = local_layer_key + "_control_diff"
+                 adata.layers[new_key] = _subtract_control_mean(
+-                    to_dense(adata.layers[local_layer_key]), control_mask, group_masks, name=new_key
++                    to_dense(adata.layers[local_layer_key]), control_mask, groups, name=new_key
+                 )
+ 
+             for local_embedding_key in [key for key in adata.obsm if isinstance(key, str)]:
+@@ -281,7 +355,7 @@ def compute_control_diff(
+                     continue
+                 new_key = local_embedding_key + "_control_diff"
+                 adata.obsm[new_key] = _subtract_control_mean(
+-                    cast_dense(adata.obsm[local_embedding_key]), control_mask, group_masks, name=new_key
++                    cast_dense(adata.obsm[local_embedding_key]), control_mask, groups, name=new_key
+                 )
+ 
+         self.control_diff_computed = True
+@@ -739,6 +813,7 @@ def fit_dose_response(
+         target_col: str = "perturbation",
+         dose_col: str = "dose",
+         key_added: str | None = None,
++        n_jobs: int | None = None,
+     ) -> None:
+         """Fit a four-parameter Hill curve for each perturbation.
+ 
+@@ -750,6 +825,8 @@ def fit_dose_response(
+             target_col: `.obs` column identifying the perturbation.
+             dose_col: `.obs` column containing non-negative numeric doses.
+             key_added: Prefix of the `.obs` columns the results are written to. Defaults to ``response``.
++            n_jobs: Number of jobs to distribute the perturbations over, passed to `joblib.Parallel`.
++                None means one job, -1 all available cores.
+ 
+         Returns:
+             Adds the fitted response and the per-perturbation ``e0``, ``emax``, ``slope``, ``ec50``, ``ec50_se``, ``r_squared`` and ``ec50_in_range`` to `.obs`, prefixed with ``key_added``.
+@@ -770,19 +847,37 @@ def fit_dose_response(
+ 
+         labels = data[target_col].to_numpy()
+         positions = pd.Series(labels).groupby(labels, sort=False).indices
++        perturbations = pd.unique(labels)
++        perturbation_rows = [positions.get(p, np.array([], dtype=np.intp)) for p in perturbations]
++        n_workers = effective_n_jobs(n_jobs if n_jobs is not None else 1)
++        blocks = _block_slices(len(perturbations), n_blocks=len(perturbations) if n_workers == 1 else 4 * n_workers)
++        block_fits = _parallelize_with_joblib(
++            (
++                delayed(_fit_hill_block)(
++                    [doses[rows] for rows in perturbation_rows[block]],
++                    [responses[rows] for rows in perturbation_rows[block]],
++                )
++                for block in blocks
++            ),
++            total=len(blocks),
++            n_jobs=n_jobs,
++        )
++
+         fitted = np.full(len(data), np.nan)
+         records: dict[object, dict[str, float | bool]] = {}
+-        for perturbation in pd.unique(labels):
+-            rows = positions.get(perturbation, np.array([], dtype=np.intp))
+-            try:
+-                fit = _fit_hill(doses[rows], responses[rows])
+-            except (ValueError, RuntimeError) as e:
++        for perturbation, rows, result in zip(
++            perturbations, perturbation_rows, itertools.chain.from_iterable(block_fits), strict=True
++        ):
++            if isinstance(result, Exception):
+                 warnings.warn(
+-                    f"Cannot fit a Hill curve for perturbation {perturbation!r}: {e}", UserWarning, stacklevel=2
++                    f"Cannot fit a Hill curve for perturbation {perturbation!r}: {result}", UserWarning, stacklevel=2
++                )
++                fit: dict[str, float | bool] = dict.fromkeys(
++                    ("e0", "emax", "slope", "ec50", "ec50_se", "r_squared"), np.nan
+                 )
+-                fit = dict.fromkeys(("e0", "emax", "slope", "ec50", "ec50_se", "r_squared"), np.nan)
+                 fit["ec50_in_range"] = False
+             else:
++                fit = result
+                 fitted[rows] = _four_parameter_logistic(
+                     doses[rows], fit["e0"], fit["emax"], np.log(fit["ec50"]), fit["slope"]
+                 )

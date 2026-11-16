@@ -1,0 +1,133 @@
+diff --git a/src/pertpy/tools/_perturbation_space/_perturbation_space.py b/src/pertpy/tools/_perturbation_space/_perturbation_space.py
+index 65520f13..c82d7799 100644
+--- a/src/pertpy/tools/_perturbation_space/_perturbation_space.py
++++ b/src/pertpy/tools/_perturbation_space/_perturbation_space.py
+@@ -13,7 +13,7 @@
+ from pertpy._types import cast_dense, cast_frame
+ 
+ if TYPE_CHECKING:
+-    from collections.abc import Callable, Iterable
++    from collections.abc import Callable, Iterable, Sequence
+ 
+     from pertpy._types import RandomStateLike
+     from pertpy.tools._distances._distances import Metric
+@@ -44,27 +44,29 @@ def _resolve_matrix(adata: AnnData, *, layer_key: str | None, embedding_key: str
+     return np.asarray(adata.X)
+ 
+ 
+-def _constant_obs_per_group(obs: pd.DataFrame, target_col: str) -> pd.DataFrame:
+-    """Collapse ``obs`` to one row per ``target_col`` value, keeping only columns constant within every group.
++def _constant_obs_per_group(obs: pd.DataFrame, group_cols: Sequence[str]) -> pd.DataFrame:
++    """Collapse ``obs`` to one row per ``group_cols`` combination, keeping only columns constant within every group.
+ 
+     Columns that vary within any group are dropped so the result can be safely mapped back onto a perturbation-level AnnData.
+     """
+-
+-    def _unique_or_nan(values: pd.Series) -> object:
+-        unique = set(values)
+-        return next(iter(unique)) if len(unique) == 1 else np.nan
+-
+-    grouped = obs.groupby(target_col, observed=True).agg(_unique_or_nan)
+-    return grouped.loc[:, ~grouped.isna().any()]
+-
+-
+-def _carry_constant_obs(ps_adata: AnnData, source_obs: pd.DataFrame, target_col: str) -> None:
+-    """Copy every ``source_obs`` column that is constant within each ``target_col`` group onto ``ps_adata``."""
+-    extra = _constant_obs_per_group(source_obs, target_col)
+-    for col in extra.columns:
+-        if col == target_col:
+-            continue
+-        ps_adata.obs[col] = ps_adata.obs[target_col].map(extra[col].to_dict())
++    grouped = obs.groupby(list(group_cols), observed=True)
++    collapsed = grouped.first().loc[:, grouped.nunique(dropna=False).max() == 1]
++    return collapsed.loc[:, ~collapsed.isna().any()]
++
++
++def _carry_constant_obs(ps_adata: AnnData, source_obs: pd.DataFrame, group_cols: str | Sequence[str]) -> None:
++    """Copy every ``source_obs`` column that is constant within each ``group_cols`` group onto ``ps_adata``."""
++    cols = [group_cols] if isinstance(group_cols, str) else list(group_cols)
++    extra = _constant_obs_per_group(source_obs, cols)
++    if extra.columns.empty:
++        return
++
++    ps_obs = cast_frame(ps_adata.obs)
++    keys = pd.Index(ps_obs[cols[0]]) if len(cols) == 1 else pd.MultiIndex.from_frame(ps_obs[cols])
++    aligned = extra.reindex(keys)
++    aligned.index = ps_adata.obs_names
++    for col in aligned.columns:
++        ps_adata.obs[col] = aligned[col]
+ 
+ 
+ def _vector_distance(u: np.ndarray, v: np.ndarray, metric: str) -> float:
+diff --git a/src/pertpy/tools/_perturbation_space/_simple.py b/src/pertpy/tools/_perturbation_space/_simple.py
+index 5e8ba20e..3991f455 100644
+--- a/src/pertpy/tools/_perturbation_space/_simple.py
++++ b/src/pertpy/tools/_perturbation_space/_simple.py
+@@ -105,6 +105,9 @@ def compute(
+     ) -> AnnData:
+         """Determines pseudobulks of an AnnData object.
+ 
++        Only `.obs` columns that have a single unique value within each group are carried over to the pseudobulk `.obs`.
++        Columns that vary within a group, such as per-cell quality metrics, are dropped instead of being represented by an arbitrary cell's value.
++
+         Args:
+             adata: Anndata object of size cells x genes
+             target_col: `.obs` column that stores the label of the perturbation applied to each cell.
+@@ -152,17 +155,7 @@ def compute(
+         if mode in ps_adata.layers:
+             ps_adata.X = ps_adata.layers[mode]
+ 
+-        missing_cols = [col for col in original_obs.columns if col not in ps_adata.obs.columns]
+-
+-        if missing_cols:
+-            grouped = original_obs.groupby(grouping_cols, observed=False)[missing_cols].first()
+-            if len(grouping_cols) == 1:
+-                index = pd.Index(ps_adata.obs[grouping_cols[0]])
+-            else:
+-                index = pd.MultiIndex.from_frame(ps_adata.obs[grouping_cols])  # type: ignore[arg-type]
+-            grouped = grouped.reindex(index)
+-            grouped.index = ps_adata.obs.index
+-            ps_adata.obs = pd.concat([ps_adata.obs, grouped], axis=1)  # type: ignore[call-overload]
++        _carry_constant_obs(ps_adata, original_obs, grouping_cols)
+ 
+         ps_adata.obs[target_col] = ps_adata.obs[target_col].astype("category")  # type: ignore[assignment]
+ 
+diff --git a/tests/tools/_perturbation_space/test_simple_perturbation_space.py b/tests/tools/_perturbation_space/test_simple_perturbation_space.py
+index 8f474ef5..9ace02d8 100644
+--- a/tests/tools/_perturbation_space/test_simple_perturbation_space.py
++++ b/tests/tools/_perturbation_space/test_simple_perturbation_space.py
+@@ -131,6 +131,34 @@ def test_pseudobulk_preserves_extra_obs_with_and_without_groups_col(rng):
+         assert row.Efficacy == efficacy_per_patient[row.Patient]
+ 
+ 
++def test_pseudobulk_only_transfers_constant_obs(rng):
++    """Regression test for https://github.com/scverse/pertpy/issues/1023.
++
++    Obs columns that take more than one value within a group must not be represented by an arbitrary cell's value.
++    """
++    obs = pd.DataFrame(
++        {
++            "perturbation": pd.Categorical(["control"] * 4 + ["target1"] * 4),
++            "replicate": pd.Categorical(["R0", "R1"] * 4),
++            "condition": pd.Categorical(["untreated"] * 4 + ["treated"] * 4, categories=["untreated", "treated"]),
++            "n_counts": rng.integers(100, 200, size=8),
++        }
++    )
++    adata = AnnData(X=rng.poisson(5, size=(8, 5)).astype(float), obs=obs)
++
++    ps = pt.tl.PseudobulkSpace()
++    pdata = ps.compute(adata, target_col="perturbation", mode="sum")
++
++    assert "n_counts" not in pdata.obs
++    assert "replicate" not in pdata.obs
++    assert pdata.obs["condition"].tolist() == ["untreated", "treated"]
++    assert pdata.obs["condition"].dtype == adata.obs["condition"].dtype
++
++    pdata_grouped = ps.compute(adata, target_col="perturbation", groups_col="replicate", mode="sum")
++
++    assert "n_counts" not in pdata_grouped.obs
++
++
+ def test_centroid_umap_response():
+     X = np.zeros((10, 5))
+ 

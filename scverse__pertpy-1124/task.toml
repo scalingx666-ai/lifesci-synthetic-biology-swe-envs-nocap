@@ -1,0 +1,65 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1124"
+description = "Speed up Statsmodels contrasts, PermutationTest, Dialogue and Augur"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "c75b0641cf6d20789ceab54c946cd90e23ec5d1c"
+reference = "https://github.com/scverse/pertpy/pull/1124"
+source_access = "auto"
+built_at = "2026-11-15T16:39:45.331152+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:9be5495a56985533113cbe63295cf3badce52cd713ee05193292cb16ba72b618"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-10-01T14:57:31Z"
+diff_format = "unified"
+context_files = [
+    "src/pertpy/tools/_augur.py",
+    "src/pertpy/tools/_dialogue.py",
+    "src/pertpy/tools/_differential_gene_expression/_simple_tests.py",
+    "src/pertpy/tools/_differential_gene_expression/_statsmodels.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 120
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

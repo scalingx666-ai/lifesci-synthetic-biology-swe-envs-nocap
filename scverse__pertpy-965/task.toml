@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-965"
+description = "Fix plot_multicomparison_fc ValueError with default figsize"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "f4e81fe913765dd82b3fc557d3d12b444f5c96be"
+reference = "https://github.com/scverse/pertpy/pull/965"
+source_access = "auto"
+built_at = "2026-11-15T16:43:58.739322+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:d006892e94790a27d8ee77f782d719e023f0743761ed6f9c3349ac646b72598b"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-11T20:06:48Z"
+diff_format = "unified"
+context_files = [
+    "pertpy/tools/_differential_gene_expression/_base.py",
+    "tests/tools/_differential_gene_expression/test_base.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 41
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

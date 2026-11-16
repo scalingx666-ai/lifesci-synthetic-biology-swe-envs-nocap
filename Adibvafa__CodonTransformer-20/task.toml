@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/Adibvafa__CodonTransformer-20"
+description = "Fix multiple temperature scaling in sample_non_deterministic()"
+
+[metadata]
+difficulty = "easy"
+category = "bugfix"
+keywords = [
+    "CodonTransformer",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "Adibvafa/CodonTransformer"
+ref = "2842ef05444d6901cb4034aab1b3153db3ee4926"
+reference = "https://github.com/Adibvafa/CodonTransformer/pull/20"
+source_access = "auto"
+built_at = "2026-11-15T18:01:26.891880+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:f18f1f70331fa5c1d2a11bf7ac70fc29a9ef995a56e339c1628b27ca3eeb5eea"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2025-02-06T19:01:30Z"
+diff_format = "unified"
+context_files = [
+    "CodonTransformer/CodonPrediction.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 4
+difficulty = "trivial"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

@@ -1,0 +1,65 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-986"
+description = "Milo cleanup: address #181"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "69318428313f6b21b8c74d12b388d97f74ad476a"
+reference = "https://github.com/scverse/pertpy/pull/986"
+source_access = "auto"
+built_at = "2026-11-15T16:43:27.078574+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:1e52ae92a4e1315a947d82cd8ad9f8c5e2f97cc6efb9fcca396e928e9baafe96"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-19T12:53:00Z"
+diff_format = "unified"
+context_files = [
+    ".github/workflows/test_tutorials.yml",
+    "docs/conf.py",
+    "pertpy/tools/_milo.py",
+    "pyproject.toml",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 97
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

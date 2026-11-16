@@ -1,0 +1,97 @@
+diff --git a/README.md b/README.md
+index 325c2d8a..526841e2 100644
+--- a/README.md
++++ b/README.md
+@@ -206,64 +206,63 @@ or
+ ### 5) Protein localisation prediction docker API
+ Model: [Hugging Face](https://huggingface.co/ritakurban/ESM_protein_localization)
+ 
+-You can also install this microservice as package. Check [client documentation](microservices/localisation/client/README.md)
+-
+ ```shell
+ docker compose up localisation
+ ```
+ 
+ Swagger UI will be available on http://localhost:5787/docs
+ 
++or
++[install as a python package](microservices/localisation/client/README.md)
++
+ ### 6) Protein binding site prediction docker API
+ Model: [p2rank](https://github.com/rdk/p2rank)
+ 
+-You can also install this microservice as package. Check [client documentation](microservices/p2rank/client/README.md)
+-
+ ```shell
+ docker compose up p2rank
+ ```
+ Swagger UI will be available on http://localhost:5731/docs
+ 
++or
++[install as a python package](microservices/p2rank/client/README.md)
++
+ ### 7) Protein solubility prediction docker API
+ Model: [Hugging Face](https://huggingface.co/thomasshelby/solubility_model/resolve/main/solubility_model.pth)
+ 
+-[Install as python package](microservices/solubility/client/README.md)
+-
+-or
+-
+ ```shell
+ docker compose up solubility
+ ```
+ 
+ Swagger UI will be available on http://localhost:5786/docs
+ 
++or
++[Install as python package](microservices/solubility/client/README.md)
++
+ ### 8) Protein-ligand structure prediction docker API
+ Model: [UMol](https://github.com/patrickbryant1/Umol)
+ 
+-[Install as python package](microservices/umol/client/README.md)
+-
+-or
+-
+ ```shell
+ docker compose up umol
+ ```
+ 
+ Swagger UI will be available on http://localhost:5735/docs
+ 
++or
++[Install as python package](microservices/umol/client/README.md)
++
+ 
+ ### 9) RoseTTAFold docker API
+ Model: [RoseTTAFold](https://github.com/RosettaCommons/RoseTTAFold)
+ 
+-[Install as python package](microservices/rosettafold/client/README.md)
+-
+-or
+-
+ ```shell
+ docker compose up rosettafold
+ ```
+ 
+ Swagger UI will be available on http://localhost:5738/docs
+ 
++or
++[Install as python package](microservices/rosettafold/client/README.md)
++
+ WARNING: To use Rosettafold you must specify 
+ **ROSETTACOMMONS_CONDA_USERNAME** and **ROSETTACOMMONS_CONDA_PASSWORD** in compose.yaml
+ and download additional data (check step 5 on https://github.com/RosettaCommons/RoseTTAFold page)
+diff --git a/microservices/rosettafold/microservice/services.py b/microservices/rosettafold/microservice/services.py
+index 02cbdbbf..0f30c807 100644
+--- a/microservices/rosettafold/microservice/services.py
++++ b/microservices/rosettafold/microservice/services.py
+@@ -73,7 +73,7 @@ async def _run_rosettafold(self, fasta: bytes, a3m: bytes) -> RunRosettaFoldResp
+         if errors:
+             return RunRosettaFoldResponse(pdb_content=None, errors=errors)
+ 
+-        if fasta:
++        if a3m:
+             with open(os.path.join(self._rosettafold_directory, 't000_.msa0.a3m'), 'wb') as f:
+                 f.write(a3m)
+         else:

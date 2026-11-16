@@ -1,0 +1,199 @@
+diff --git a/build/start_server.sh b/build/start_server.sh
+index b825083f..a0d76cb1 100644
+--- a/build/start_server.sh
++++ b/build/start_server.sh
+@@ -1,2 +1,2 @@
+ npm --prefix frontend run dev -- --host &
+-NOLABS_ENVIRONMENT=dev poetry run uvicorn nolabs.api:app --host=0.0.0.0 --port=8000 --workers 4
+\ No newline at end of file
++NOLABS_ENVIRONMENT=dev poetry run uvicorn nolabs.application.api:app --host=0.0.0.0 --port=8000 --workers 4
+\ No newline at end of file
+diff --git a/compose.yaml b/compose.yaml
+index ed0b73b3..45ca6900 100644
+--- a/compose.yaml
++++ b/compose.yaml
+@@ -125,7 +125,7 @@ services:
+       dockerfile: build/Dockerfile
+     command: --host=0.0.0.0 --port=5734
+   external_data_query:
+-    image: 'ghcr.io/basedlabs/external-data-query:1.0.2'
++    image: 'ghcr.io/basedlabs/external-data-query:1.0.3'
+     network_mode: host
+     build:
+       context: microservices/external_data_query
+@@ -160,7 +160,7 @@ services:
+       dockerfile: build/Dockerfile
+     command: --host=0.0.0.0 --port=5790 --workers=1
+   nolabs:
+-    image: 'ghcr.io/basedlabs/nolabs:2.0.3'
++    image: 'ghcr.io/basedlabs/nolabs:2.0.4'
+     network_mode: host
+     build:
+       context: .
+diff --git a/microservices/external_data_query/external_data_query/chembl/api_models.py b/microservices/external_data_query/external_data_query/chembl/api_models.py
+index 799e8722..f9a98ea0 100644
+--- a/microservices/external_data_query/external_data_query/chembl/api_models.py
++++ b/microservices/external_data_query/external_data_query/chembl/api_models.py
+@@ -13,7 +13,7 @@ class Molecule:
+     smiles: str
+     link: str
+     molecule_type: str | None = None
+-    pref_name: str = None
++    pref_name: str | None = None
+ 
+ 
+ @dataclass
+diff --git a/nolabs/api.py b/nolabs/api.py
+deleted file mode 100644
+index 455bb101..00000000
+--- a/nolabs/api.py
++++ /dev/null
+@@ -1,47 +0,0 @@
+-from fastapi import FastAPI
+-from fastapi.middleware.cors import CORSMiddleware
+-
+-from nolabs.controllers.conformations.conformations import router as conformations_router
+-from nolabs.controllers.drug_discovery.drug_discovery import router as drug_discovery_router
+-from nolabs.controllers.biobuddy.biobuddy import router as biobuddy_router
+-from nolabs.controllers.gene_ontology.gene_ontology import router as gene_ontology_router
+-from nolabs.controllers.localisation.localisation import router as localisation_router
+-from nolabs.controllers.protein_design.protein_design import router as protein_design_router
+-from nolabs.controllers.solubility.solubility import router as solubility_router
+-from nolabs.controllers.folding.folding import router as folding_router
+-from nolabs.controllers.small_molecules_design.small_molecules_design import router as small_molecules_design_router
+-from nolabs.middlewares.domain_exception_middleware import add_domain_exception_middleware
+-from nolabs.infrastructure.logging import configure_logging
+-
+-configure_logging()
+-
+-app = FastAPI(
+-    title='NoLabs',
+-    version='1'
+-)
+-
+-origins = [
+-    '*'
+-]
+-
+-
+-app.include_router(biobuddy_router)
+-app.include_router(conformations_router)
+-app.include_router(solubility_router)
+-app.include_router(localisation_router)
+-app.include_router(gene_ontology_router)
+-app.include_router(drug_discovery_router)
+-app.include_router(protein_design_router)
+-app.include_router(folding_router)
+-app.include_router(small_molecules_design_router)
+-add_domain_exception_middleware(app)
+-
+-app.add_middleware(
+-    CORSMiddleware,
+-    allow_origins=origins,
+-    allow_credentials=True,
+-    allow_methods=["*"],
+-    allow_headers=["*"]
+-)
+-
+-print('Go to /api/v1/docs to see Swagger')
+diff --git a/nolabs/application/api.py b/nolabs/application/api.py
+index 712743e1..7ee003c9 100644
+--- a/nolabs/application/api.py
++++ b/nolabs/application/api.py
+@@ -53,7 +53,6 @@ async def websocket_endpoint(websocket: WebSocket):
+     try:
+         while True:
+             item = websockets_queue.read_last()
+-            print(item)
+             await asyncio.sleep(0.2)
+             if item:
+                 await websocket.send_json(data=item)
+diff --git a/nolabs/infrastructure/appsettings.dev.json b/nolabs/infrastructure/appsettings.dev.json
+new file mode 100644
+index 00000000..f2bbb5a6
+--- /dev/null
++++ b/nolabs/infrastructure/appsettings.dev.json
+@@ -0,0 +1,53 @@
++{
++  "connection_string": "mongodb://127.0.0.1:27017/nolabs",
++  "biobuddy": {
++    "microservice": "http://127.0.0.1:5738"
++  },
++  "external_query": {
++    "microservice": "http://127.0.0.1:5739"
++  },
++  "localisation": {
++    "microservice": "http://127.0.0.1:5787"
++  },
++  "gene_ontology": {
++    "microservice": "http://127.0.0.1:5788"
++  },
++  "esmfold": {
++    "microservice": "http://127.0.0.1:5736"
++  },
++  "reinvent": {
++    "microservice": "http://127.0.0.1:5790"
++  },
++  "esmfold_light": {
++    "microservice": "http://127.0.0.1:5733"
++  },
++  "rosettafold": {
++    "microservice": "http://127.0.0.1:5736"
++  },
++  "solubility": {
++    "microservice": "http://127.0.0.1:5786"
++  },
++  "protein_design": {
++    "microservice": "http://127.0.0.1:5789"
++  },
++  "conformations": {
++    "microservice": "http://127.0.0.1:5785"
++  },
++  "p2rank": {
++    "microservice": "http://127.0.0.1:5731"
++  },
++  "msa_light": {
++    "microservice": "http://127.0.0.1:5734",
++    "msa_server_url": "http://207.246.89.242:8000/generate-msa"
++  },
++  "umol": {
++    "microservice": "http://127.0.0.1:5735"
++  },
++  "diffdock": {
++    "microservice": "http://127.0.0.1:5737"
++  },
++  "redis": {
++    "host": "localhost",
++    "port": 6379
++  }
++}
+\ No newline at end of file
+diff --git a/nolabs/infrastructure/di.py b/nolabs/infrastructure/di.py
+index 760f0b73..602c6dae 100644
+--- a/nolabs/infrastructure/di.py
++++ b/nolabs/infrastructure/di.py
+@@ -14,7 +14,6 @@
+ import p2rank_microservice
+ import msa_light_microservice
+ import diffdock_microservice
+-import umol_microservice
+ 
+ from nolabs.infrastructure.logging import get_logger
+ from nolabs.infrastructure.settings import Settings, MsaLightMicroserviceSettings
+@@ -159,13 +158,4 @@ def diffdock_microservice() -> diffdock_microservice.DefaultApi:
+             host=settings.diffdock.microservice
+         )
+         client = diffdock_microservice.ApiClient(configuration=configuration)
+-        return diffdock_microservice.DefaultApi(api_client=client)
+-
+-    @staticmethod
+-    def umol_microservice() -> umol_microservice.DefaultApi:
+-        settings = Settings.load()
+-        configuration = umol_microservice.Configuration(
+-            host=settings.umol_microservice.microservice
+-        )
+-        client = umol_microservice.ApiClient(configuration=configuration)
+-        return umol_microservice.DefaultApi(api_client=client)
+\ No newline at end of file
++        return diffdock_microservice.DefaultApi(api_client=client)
+\ No newline at end of file

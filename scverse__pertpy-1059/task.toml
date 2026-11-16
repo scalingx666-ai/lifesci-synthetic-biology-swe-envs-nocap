@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1059"
+description = "Align dataset download progress"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "6de6b184ac12d8283845a389aabe24d4b8c4d57f"
+reference = "https://github.com/scverse/pertpy/pull/1059"
+source_access = "auto"
+built_at = "2026-11-15T16:41:41.050655+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:a79161bac87f33af9558fd346a34315679eeb25703fbda93563a1ab199678f26"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-07-29T08:18:41Z"
+diff_format = "unified"
+context_files = [
+    "src/pertpy/data/_dataloader.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 7
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

@@ -1,0 +1,708 @@
+diff --git a/src/pertpy/preprocessing/_guide_rna.py b/src/pertpy/preprocessing/_guide_rna.py
+index afb5682b..20c122a9 100644
+--- a/src/pertpy/preprocessing/_guide_rna.py
++++ b/src/pertpy/preprocessing/_guide_rna.py
+@@ -170,7 +170,7 @@ def assign_to_max_guide_numpy(
+     @njit(parallel=True)
+     def _assign_max_guide_sparse(indptr, data, indices, assignment_threshold, assigned_grna):
+         n_rows = len(indptr) - 1
+-        for i in range(n_rows):
++        for i in prange(n_rows):
+             row_start = indptr[i]
+             row_end = indptr[i + 1]
+ 
+@@ -526,7 +526,9 @@ def _binary_to_per_cell_strings(
+         n_cells = binary.shape[0]
+         num_guides_assigned = binary.sum(axis=1)
+         assignments = np.full(n_cells, no_grna_assigned_key, dtype=object)
+-        multi_mask = (num_guides_assigned > 0) & (num_guides_assigned <= max_assignments_per_cell)
++        single_mask = num_guides_assigned == 1
++        assignments[single_mask] = guide_names[binary[single_mask].argmax(axis=1)]
++        multi_mask = (num_guides_assigned > 1) & (num_guides_assigned <= max_assignments_per_cell)
+         for cell_idx in np.where(multi_mask)[0]:
+             assigned_guides = guide_names[binary[cell_idx] == 1]
+             assignments[cell_idx] = multiple_grna_assignment_string.join(assigned_guides.tolist())
+diff --git a/src/pertpy/tools/_cinemaot.py b/src/pertpy/tools/_cinemaot.py
+index 127ebea2..d71508d3 100644
+--- a/src/pertpy/tools/_cinemaot.py
++++ b/src/pertpy/tools/_cinemaot.py
+@@ -9,7 +9,6 @@
+ import pandas as pd
+ import scanpy as sc
+ import scipy.stats as ss
+-import sklearn.metrics
+ from fast_array_utils.conv import to_dense
+ from ott.geometry.pointcloud import PointCloud
+ from ott.problems.linear import linear_problem
+@@ -109,12 +108,8 @@ def causaleffect(
+         cf = np.array(X_transformed[:, xi < thres], np.float64)
+         cf1 = np.array(cf[adata.obs[pert_key] == control, :], np.float64)
+         cf2 = np.array(cf[adata.obs[pert_key] != control, :], np.float64)
+-        if sum(xi < thres) == 1:
+-            sklearn.metrics.pairwise_distances(cf1.reshape(-1, 1), cf2.reshape(-1, 1))
+-        elif sum(xi < thres) == 0:
++        if sum(xi < thres) == 0:
+             raise ValueError("No confounder components identified. Please try a higher threshold.")
+-        else:
+-            sklearn.metrics.pairwise_distances(cf1, cf2)
+ 
+         e = smoothness * sum(xi < thres)
+         geom = PointCloud(jnp.asarray(cf1), jnp.asarray(cf2), epsilon=e, batch_size=batch_size)
+@@ -172,31 +167,31 @@ def causaleffect(
+         else:
+             _solver = jax.jit(sinkhorn.Sinkhorn(threshold=eps))
+             ot_sink = _solver(ot_prob)
+-            ot_matrix = np.array(ot_sink.matrix.T, dtype=np.float64)
++            matching = ot_sink.matrix.T
++            transport = np.array(matching, dtype=np.float64)
++            transport /= np.sum(transport, axis=1)[:, None]
+             embedding = X_transformed[adata.obs[pert_key] != control, :] - np.matmul(
+-                ot_matrix / np.sum(ot_matrix, axis=1)[:, None], X_transformed[adata.obs[pert_key] == control, :]
++                transport, X_transformed[adata.obs[pert_key] == control, :]
+             )
+ 
+             adata_X = adata.X
+             X = to_dense(adata_X)
+ 
+-            te2 = X[adata.obs[pert_key] != control, :] - np.matmul(
+-                ot_matrix / np.sum(ot_matrix, axis=1)[:, None], X[adata.obs[pert_key] == control, :]
+-            )
++            te2 = X[adata.obs[pert_key] != control, :] - np.matmul(transport, X[adata.obs[pert_key] == control, :])
+             if isinstance(adata_X, CSBase):
+                 del X
+ 
+             adata.obsm[cf_rep] = cf
+             cf_matrix = cast_dense(adata.obsm[cf_rep])
+             cf_matrix[adata.obs[pert_key] != control, :] = np.matmul(
+-                ot_matrix / np.sum(ot_matrix, axis=1)[:, None], cf_matrix[adata.obs[pert_key] == control, :]
++                transport, cf_matrix[adata.obs[pert_key] == control, :]
+             )
+ 
+         TE = sc.AnnData(np.array(te2), obs=adata[adata.obs[pert_key] != control, :].obs.copy(), var=adata.var.copy())
+         TE.obsm["X_embedding"] = embedding
+ 
+         if return_matching:
+-            TE.obsm["ot"] = np.asarray(ot_sink.matrix.T)
++            TE.obsm["ot"] = np.asarray(matching if solver == "Sinkhorn" else ot_sink.matrix.T)
+             return TE
+         else:
+             return TE
+@@ -395,8 +390,8 @@ def get_dim(
+         data = to_dense(adata.raw.X)
+         vm = (1e-3 + data + c * data * data) / (1 + c)
+         sk.fit(vm)
+-        wm = np.dot(np.dot(np.sqrt(sk._D1), vm), np.sqrt(sk._D2))
+-        u, s, vt = np.linalg.svd(wm)
++        wm = np.sqrt(sk._D1)[:, None] * vm * np.sqrt(sk._D2)[None, :]
++        s = np.linalg.svd(wm, compute_uv=False)
+         dim = min(sum(s > (np.sqrt(data.shape[0]) + np.sqrt(data.shape[1]))), adata.obsm[use_rep].shape[1])
+         return dim
+ 
+@@ -431,7 +426,7 @@ def _get_weightidx(
+             >>> model = pt.tl.Cinemaot()
+             >>> idx = model._get_weightidx(adata, pert_key="perturbation", control="No stimulation")
+         """
+-        adata_ = adata.copy()
++        adata_ = sc.AnnData(obs=cast_frame(adata.obs).copy(), obsm={use_rep: adata.obsm[use_rep]})
+         X_pca1 = adata_.obsm[use_rep][adata_.obs[pert_key] == control, :]  # type: ignore[index]
+         X_pca2 = adata_.obsm[use_rep][adata_.obs[pert_key] != control, :]  # type: ignore[index]
+         nbrs = NearestNeighbors(n_neighbors=k, algorithm="ball_tree").fit(X_pca1)
+@@ -894,10 +889,10 @@ def fit(self, P: ArrayLike):
+ 
+         P_eps = np.copy(P)
+         while (
+-            np.any(np.sum(P_eps, axis=1) < min_threshr)
+-            or np.any(np.sum(P_eps, axis=1) > max_threshr)
+-            or np.any(np.sum(P_eps, axis=0) < min_threshc)
+-            or np.any(np.sum(P_eps, axis=0) > max_threshc)
++            np.any((row_sums := np.sum(P_eps, axis=1)) < min_threshr)
++            or np.any(row_sums > max_threshr)
++            or np.any((col_sums := np.sum(P_eps, axis=0)) < min_threshc)
++            or np.any(col_sums > max_threshc)
+         ):
+             c = csum / P.T.dot(r)
+             r = rsum / P.dot(c)
+@@ -913,8 +908,8 @@ def fit(self, P: ArrayLike):
+         if not self._stopping_condition:
+             self._stopping_condition = "epsilon"
+ 
+-        self._D1 = np.diag(np.squeeze(r))
+-        self._D2 = np.diag(np.squeeze(c))
+-        P_eps = np.diag(self._D1)[:, None] * P * np.diag(self._D2)[None, :]
++        self._D1 = np.squeeze(r)
++        self._D2 = np.squeeze(c)
++        P_eps = self._D1[:, None] * P * self._D2[None, :]
+ 
+         return P_eps
+diff --git a/src/pertpy/tools/_perturbation_efficacy/_base.py b/src/pertpy/tools/_perturbation_efficacy/_base.py
+index 276a93af..b306d466 100644
+--- a/src/pertpy/tools/_perturbation_efficacy/_base.py
++++ b/src/pertpy/tools/_perturbation_efficacy/_base.py
+@@ -5,18 +5,53 @@
+ 
+ import numpy as np
+ import scanpy as sc
++from fast_array_utils.conv import to_dense
+ from fast_array_utils.stats import mean, mean_var
++from numba import njit, prange
+ from pandas.errors import PerformanceWarning
+ from scanpy.tools._utils import _choose_representation
+-from scipy.sparse import csr_array, csr_matrix, lil_matrix, sparray
++from scipy.sparse import csr_array, csr_matrix, sparray, vstack
+ 
+-from pertpy._types import CSBase, RankGenesMethod, cast_dense, cast_matrix
++from pertpy._types import CSBase, RankGenesMethod, cast_matrix
+ 
+ if TYPE_CHECKING:
+     import pandas as pd
+     from anndata import AnnData
+ 
+ 
++@njit(parallel=True)
++def _csr_subset_kernel(
++    indptr: np.ndarray, indices: np.ndarray, data: np.ndarray, rows: np.ndarray, col_map: np.ndarray
++) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
++    counts = np.zeros(rows.size + 1, dtype=np.int64)
++    for i in prange(rows.size):
++        for k in range(indptr[rows[i]], indptr[rows[i] + 1]):
++            if col_map[indices[k]] >= 0:
++                counts[i + 1] += 1
++    out_indptr = np.cumsum(counts)
++    out_indices = np.empty(out_indptr[-1], dtype=indices.dtype)
++    out_data = np.empty(out_indptr[-1], dtype=data.dtype)
++    for i in prange(rows.size):
++        pos = out_indptr[i]
++        for k in range(indptr[rows[i]], indptr[rows[i] + 1]):
++            new_col = col_map[indices[k]]
++            if new_col >= 0:
++                out_indices[pos] = new_col
++                out_data[pos] = data[k]
++                pos += 1
++    return out_indptr, out_indices, out_data
++
++
++def _subset_rows_cols(X: np.ndarray | CSBase, rows: np.ndarray, cols: np.ndarray) -> np.ndarray | CSBase:
++    """`X[rows][:, cols]` for unique `cols`, without materializing the full selected rows of a CSR matrix."""
++    if not (isinstance(X, CSBase) and X.format == "csr"):
++        return X[rows][:, cols]
++    col_map = np.full(X.shape[1], -1, dtype=np.int64)
++    col_map[cols] = np.arange(cols.size)
++    indptr, indices, data = _csr_subset_kernel(X.indptr, X.indices, X.data, rows, col_map)
++    return type(X)((data, indices, indptr), shape=(rows.size, cols.size))
++
++
+ class PerturbationEfficacyAnalyzer:
+     """Shared substrate for the perturbation efficacy analysis tools.
+ 
+@@ -92,32 +127,34 @@ def perturbation_signature(
+         if copy:
+             adata = adata.copy()
+ 
+-        # pynndescent and the LIL workflow below only support legacy scipy sparse matrices, so a sparse array
+-        # input is computed on as a csr_matrix and converted back to a sparse array at the end.
+         input_is_sparray = isinstance(adata.X, sparray)
+         X = csr_matrix(cast_matrix(adata.X)) if input_is_sparray else cast_matrix(adata.X)
+-        adata.layers["X_pert"] = X.copy()
++        X_pert = None if isinstance(X, CSBase) else X.copy()
++        sparse_blocks: list[tuple[np.ndarray, CSBase]] = []
+ 
+-        # Work with LIL for efficient indexing but don't store it in AnnData as LIL is not supported anymore
+-        X_pert = cast_matrix(adata.layers["X_pert"])
+-        X_pert_lil = X_pert.tolil() if isinstance(X_pert, CSBase) else X_pert
++        def _set_rows(rows: np.ndarray, values) -> None:
++            if X_pert is None:
++                sparse_blocks.append((rows, csr_matrix(values, dtype=X.dtype)))
++            else:
++                X_pert[rows] = values
+ 
+-        control_mask = adata.obs[pert_key] == control
++        control_mask = np.asarray(adata.obs[pert_key] == control)
+ 
+         if ref_selection_mode == "split_by":
+             for split in adata.obs[split_by].unique():
+-                split_mask = adata.obs[split_by] == split
+-                control_mask_group = control_mask & split_mask
+-                control_mean_expr = mean(X[control_mask_group], axis=0)
+-                X_pert_lil[split_mask] = (
+-                    np.repeat(control_mean_expr.reshape(1, -1), split_mask.sum(), axis=0) - X_pert_lil[split_mask]
++                split_mask = np.asarray(adata.obs[split_by] == split)
++                split_rows = np.flatnonzero(split_mask)
++                control_mean_expr = mean(X[control_mask & split_mask], axis=0)
++                _set_rows(
++                    split_rows,
++                    np.repeat(control_mean_expr.reshape(1, -1), split_rows.size, axis=0) - X[split_rows],
+                 )
+         else:
+             if split_by is None:
+                 split_masks = [np.full(adata.n_obs, True, dtype=bool)]
+             else:
+                 split_obs = adata.obs[split_by]
+-                split_masks = [split_obs == cat for cat in split_obs.unique()]
++                split_masks = [np.asarray(split_obs == cat) for cat in split_obs.unique()]
+ 
+             representation = cast_matrix(_choose_representation(adata, use_rep=use_rep, n_pcs=n_pcs))
+             if isinstance(representation, sparray):
+@@ -130,15 +167,16 @@ def perturbation_signature(
+             eps = kwargs.pop("epsilon", 0.1)
+             for split_mask in split_masks:
+                 control_mask_split = control_mask & split_mask
++                split_rows = np.flatnonzero(split_mask)
+                 R_split = representation[split_mask]
+                 R_control = representation[np.asarray(control_mask_split)]
+                 nn_index = NNDescent(R_control, **kwargs)
+                 indices, _ = nn_index.query(R_split, k=n_neighbors, epsilon=eps)
+-                X_split_control = X[np.asarray(control_mask_split)]
++                X_split_control = X[control_mask_split]
+                 X_control = (
+                     X_split_control.expm1() if isinstance(X_split_control, CSBase) else np.expm1(X_split_control)
+                 )
+-                n_split = split_mask.sum()
++                n_split = split_rows.size
+                 n_control = X_control.shape[0]
+ 
+                 if batch_size is None:
+@@ -149,26 +187,30 @@ def perturbation_signature(
+                         shape=(n_split, n_control),
+                     )
+                     neigh_matrix /= n_neighbors
+-                    X_pert_lil[np.asarray(split_mask)] = (
+-                        sc.pp.log1p(neigh_matrix @ X_control) - X_pert_lil[np.asarray(split_mask)]
+-                    )
++                    _set_rows(split_rows, sc.pp.log1p(neigh_matrix @ X_control) - X[split_rows])
+                 else:
+-                    split_indices = np.where(split_mask)[0]
+                     for i in range(0, n_split, batch_size):
+                         size = min(i + batch_size, n_split)
+                         select = slice(i, size)
+                         batch = np.ravel(indices[select])
+-                        split_batch = split_indices[select]
++                        split_batch = split_rows[select]
+                         size = size - i
+-                        means_batch = cast_dense(X_control[batch])
++                        means_batch = to_dense(X_control[batch])
+                         batch_reshaped = means_batch.reshape(size, n_neighbors, -1)
+                         means_batch, _ = mean_var(batch_reshaped, axis=1)
+-                        X_pert_lil[split_batch] = np.log1p(means_batch) - X_pert_lil[split_batch]
++                        _set_rows(split_batch, np.log1p(means_batch) - X[split_batch])
+ 
+-        if isinstance(X_pert_lil, np.ndarray):
+-            adata.layers["X_pert"] = X_pert_lil
++        if X_pert is not None:
++            adata.layers["X_pert"] = X_pert
+         else:
+-            x_pert = X_pert_lil.tocsr()
++            rows = np.concatenate([r for r, _ in sparse_blocks]) if sparse_blocks else np.array([], dtype=int)
++            unset_rows = np.setdiff1d(np.arange(adata.n_obs), rows)
++            if unset_rows.size:
++                sparse_blocks.append((unset_rows, csr_matrix(X[unset_rows])))
++                rows = np.concatenate([rows, unset_rows])
++            x_pert = vstack([block for _, block in sparse_blocks], format="csr")[np.argsort(rows)]
++            x_pert.eliminate_zeros()
++            x_pert.sort_indices()
+             adata.layers["X_pert"] = csr_array(x_pert) if input_is_sparray else x_pert
+ 
+         if copy:
+diff --git a/src/pertpy/tools/_perturbation_efficacy/_mixscale.py b/src/pertpy/tools/_perturbation_efficacy/_mixscale.py
+index a1fc031a..b72edc17 100644
+--- a/src/pertpy/tools/_perturbation_efficacy/_mixscale.py
++++ b/src/pertpy/tools/_perturbation_efficacy/_mixscale.py
+@@ -1,7 +1,7 @@
+ from __future__ import annotations
+ 
+ import warnings
+-from functools import singledispatch
++from functools import partial, singledispatch
+ from typing import TYPE_CHECKING
+ 
+ import numpy as np
+@@ -11,8 +11,8 @@
+ from pandas.errors import PerformanceWarning
+ from scipy.sparse import sparray, spmatrix
+ 
+-from pertpy._types import CSBase, RankGenesMethod, cast_frame
+-from pertpy.tools._perturbation_efficacy._base import PerturbationEfficacyAnalyzer
++from pertpy._types import CSBase, RankGenesMethod, cast_frame, cast_matrix
++from pertpy.tools._perturbation_efficacy._base import PerturbationEfficacyAnalyzer, _subset_rows_cols
+ 
+ if TYPE_CHECKING:
+     from collections.abc import Mapping, Sequence
+@@ -205,7 +205,9 @@ def mixscale(
+                     continue
+ 
+                 de_indices = [var_loc[g] for g in de_genes]
+-                dat = X[all_mask][:, de_indices].astype(np.float64)  # type: ignore[call-overload, index, union-attr]
++                dat = _subset_rows_cols(cast_matrix(X), np.flatnonzero(all_mask), np.asarray(de_indices)).astype(
++                    np.float64
++                )
+                 if scale:
+                     dat = self._scale_features(dat)
+ 
+@@ -288,6 +290,8 @@ def _get_mixscale_markers(
+         gene_targets = set(adata.obs[pert_key]).difference([control])
+         nt_cells = adata.obs_names[np.asarray(adata.obs[pert_key] == control)]
+         markers: dict[str, np.ndarray] = {}
++        de_groups: dict[str, list[pd.Index]] = {}
++        harmonized_refs: dict[str, pd.Index] = {}
+ 
+         for gene in gene_targets:
+             if de_genes_by_target is not None:
+@@ -297,48 +301,53 @@ def _get_mixscale_markers(
+                         f"No DE genes provided for perturbation {gene!r} in de_genes_by_target; it will not be scored.",
+                         stacklevel=2,
+                     )
+-                de_genes = np.array(supplied, dtype=object)
++                markers[gene] = np.array(supplied, dtype=object)
++                continue
++
++            guide_cells = adata.obs_names[adata.obs[pert_key] == gene]
++            if harmonize and split_by is not None:
++                harmonized_refs[gene] = self._harmonize_control_cells(
++                    adata,
++                    target_cells=guide_cells,
++                    control_cells=nt_cells,
++                    split_by=split_by,
++                    min_proportion=harmonize_min_proportion,
++                    random_state=random_state,
++                )
++            if fine_mode:
++                guide_labels = cast_frame(adata.obs).loc[guide_cells, fine_mode_labels]
++                de_groups[gene] = [guide_cells[guide_labels == guide] for guide in guide_labels.unique()]
+             else:
+-                guide_cells = adata.obs_names[adata.obs[pert_key] == gene]
+-                ref_cells = nt_cells
+-                if harmonize and split_by is not None:
+-                    ref_cells = self._harmonize_control_cells(
+-                        adata,
+-                        target_cells=guide_cells,
+-                        control_cells=nt_cells,
+-                        split_by=split_by,
+-                        min_proportion=harmonize_min_proportion,
+-                        random_state=random_state,
+-                    )
++                de_groups[gene] = [guide_cells]
+ 
+-                if fine_mode:
+-                    pooled: list[str] = []
+-                    guide_labels = cast_frame(adata.obs).loc[guide_cells, fine_mode_labels]
+-                    for guide in guide_labels.unique():
+-                        guide_subset = guide_cells[guide_labels == guide]
+-                        for g in self._de_for_pair(
+-                            adata,
+-                            guide_subset,
+-                            ref_cells,
+-                            de_layer=de_layer,
+-                            test_method=test_method,
+-                            logfc_threshold=logfc_threshold,
+-                            pval_cutoff=pval_cutoff,
+-                        ):
+-                            if g not in pooled:
+-                                pooled.append(g)
+-                    de_genes = np.array(pooled, dtype=object)
+-                else:
+-                    de_genes = self._de_for_pair(
+-                        adata,
+-                        guide_cells,
+-                        ref_cells,
+-                        de_layer=de_layer,
+-                        test_method=test_method,
+-                        logfc_threshold=logfc_threshold,
+-                        pval_cutoff=pval_cutoff,
+-                    )
++        de_for_groups = partial(
++            self._de_for_groups,
++            adata,
++            de_layer=de_layer,
++            test_method=test_method,
++            logfc_threshold=logfc_threshold,
++            pval_cutoff=pval_cutoff,
++        )
++        de_results = de_for_groups(
++            {
++                (gene, i): cells
++                for gene, groups in de_groups.items()
++                if gene not in harmonized_refs
++                for i, cells in enumerate(groups)
++            },
++            nt_cells,
++        )
++        for gene, ref_cells in harmonized_refs.items():
++            de_results |= de_for_groups({(gene, i): cells for i, cells in enumerate(de_groups[gene])}, ref_cells)
++        for gene, groups in de_groups.items():
++            if fine_mode:
++                pooled = dict.fromkeys(g for i in range(len(groups)) for g in de_results[(gene, i)])
++                markers[gene] = np.array(list(pooled), dtype=object)
++            else:
++                markers[gene] = de_results[(gene, 0)]
+ 
++        for gene in gene_targets:
++            de_genes = markers.pop(gene)
+             if len(de_genes) > max_de_genes:
+                 de_genes = de_genes[:max_de_genes]
+             if len(de_genes) < min_de_genes:
+@@ -348,46 +357,60 @@ def _get_mixscale_markers(
+         return markers
+ 
+     @staticmethod
+-    def _de_for_pair(
++    def _de_for_groups(
+         adata: AnnData,
+-        group_cells,
++        groups: Mapping[tuple[str, int], pd.Index],
+         reference_cells,
+         *,
+         de_layer: str | None,
+         test_method: RankGenesMethod,
+         logfc_threshold: float,
+         pval_cutoff: float,
+-    ) -> np.ndarray:
+-        """Wilcoxon-style DE between two cell sets; returns gene names passing the filters, sorted by raw p-value."""
+-        group_cells = pd.Index(group_cells)
+-        reference_cells = pd.Index(reference_cells)
+-        if len(group_cells) == 0 or len(reference_cells) == 0:
+-            return np.array([], dtype=object)
+-
+-        sub = adata[adata.obs_names.isin(group_cells.union(reference_cells))].copy()
+-        groups = np.where(sub.obs_names.isin(group_cells), "perturbed", "control")
+-        sub.obs["_mixscale_de"] = pd.Categorical(groups, categories=["control", "perturbed"])
++    ) -> dict[tuple[str, int], np.ndarray]:
++        """Wilcoxon-style DE of each disjoint cell set against the reference cells; returns gene names passing the filters, sorted by raw p-value."""
++        results = {key: np.array([], dtype=object) for key in groups}
++        tested = [key for key, cells in groups.items() if len(cells) > 0]
++        if len(tested) == 0 or len(reference_cells) == 0:
++            return results
++
++        codes = np.full(adata.n_obs, -1)
++        codes[adata.obs_names.get_indexer(pd.Index(reference_cells))] = 0
++        for code, key in enumerate(tested, start=1):
++            codes[adata.obs_names.get_indexer(groups[key])] = code
++        rows = np.flatnonzero(codes >= 0)
++        categories = ["control", *(f"perturbed{code}" for code in range(1, len(tested) + 1))]
++        X = cast_matrix(adata.X if de_layer is None else adata.layers[de_layer])
++        sub = sc.AnnData(
++            X=X[rows],
++            obs=pd.DataFrame(
++                {"_mixscale_de": pd.Categorical.from_codes(codes[rows], categories=pd.Index(categories))},
++                index=adata.obs_names[rows],
++            ),
++            var=pd.DataFrame(index=adata.var_names),
++            uns={"log1p": adata.uns["log1p"]} if "log1p" in adata.uns else None,
++        )
+         with warnings.catch_warnings():
+             warnings.simplefilter("ignore", RuntimeWarning)
+             warnings.simplefilter("ignore", PerformanceWarning)
+             sc.tl.rank_genes_groups(
+                 sub,
+-                layer=de_layer,
+                 groupby="_mixscale_de",
+-                groups=["perturbed"],
++                groups=categories[1:],
+                 reference="control",
+                 method=test_method,
+                 use_raw=False,
+             )
+         result = sub.uns["rank_genes_groups"]
+-        names = np.asarray(result["names"]["perturbed"])
+-        logfoldchanges = np.asarray(result["logfoldchanges"]["perturbed"])
+-        pvals = np.asarray(result["pvals"]["perturbed"])
+-        pvals_adj = np.asarray(result["pvals_adj"]["perturbed"])
+-
+-        keep = (np.abs(logfoldchanges) >= logfc_threshold) & (pvals_adj < pval_cutoff)
+-        names, pvals = names[keep], pvals[keep]
+-        return names[np.argsort(pvals, kind="stable")]
++        for key, group in zip(tested, categories[1:], strict=True):
++            names = np.asarray(result["names"][group])
++            logfoldchanges = np.asarray(result["logfoldchanges"][group])
++            pvals = np.asarray(result["pvals"][group])
++            pvals_adj = np.asarray(result["pvals_adj"][group])
++
++            keep = (np.abs(logfoldchanges) >= logfc_threshold) & (pvals_adj < pval_cutoff)
++            names, pvals = names[keep], pvals[keep]
++            results[key] = names[np.argsort(pvals, kind="stable")]
++        return results
+ 
+     @staticmethod
+     def _harmonize_control_cells(
+diff --git a/src/pertpy/tools/_perturbation_efficacy/_mixscape.py b/src/pertpy/tools/_perturbation_efficacy/_mixscape.py
+index a5c0418b..674fb4bd 100644
+--- a/src/pertpy/tools/_perturbation_efficacy/_mixscape.py
++++ b/src/pertpy/tools/_perturbation_efficacy/_mixscape.py
+@@ -19,7 +19,7 @@
+ 
+ from pertpy._doc import _doc_params, doc_common_plot_args
+ from pertpy._types import RankGenesMethod, cast_dense, cast_frame, cast_matrix
+-from pertpy.tools._perturbation_efficacy._base import PerturbationEfficacyAnalyzer
++from pertpy.tools._perturbation_efficacy._base import PerturbationEfficacyAnalyzer, _subset_rows_cols
+ 
+ if TYPE_CHECKING:
+     from collections.abc import Sequence
+@@ -149,61 +149,70 @@ def mixscape(
+         )
+         gv_list: dict[str, dict] = {}
+ 
+-        obs[f"{new_class_name}_p_{perturbation_type.lower()}"] = 0.0
++        pert_labels = obs[pert_key].to_numpy()
++        class_dtype = obs[new_class_name].dtype
++        classes = obs[new_class_name].to_numpy(dtype=object)
++        post_probs = np.zeros(adata.n_obs)
+         for split, split_mask in enumerate(split_masks):
+             category = categories[split]
++            split_cells = np.asarray(split_mask)
+             gene_targets = list(set(adata[split_mask].obs[pert_key]).difference([control]))
++            nt_cells = (pert_labels == control) & split_cells
+             for gene in gene_targets:
+                 post_prob = 0
+-                orig_guide_cells = (obs[pert_key] == gene) & split_mask
+-                orig_guide_cells_index = list(orig_guide_cells.index[orig_guide_cells])
+-                nt_cells = (obs[pert_key] == control) & split_mask
+-                all_cells = orig_guide_cells | nt_cells
++                orig_guide_cells = (pert_labels == gene) & split_cells
++                orig_guide_rows = np.flatnonzero(orig_guide_cells)
++                all_rows = np.flatnonzero(orig_guide_cells | nt_cells)
+ 
+                 if len(perturbation_markers[(category, gene)]) == 0:
+-                    obs.loc[orig_guide_cells, new_class_name] = f"{gene} NP"
++                    classes[orig_guide_rows] = f"{gene} NP"
+ 
+                 else:
+                     de_genes = perturbation_markers[(category, gene)]
+                     de_genes_indices = np.where(np.isin(adata.var_names, list(de_genes)))[0]
+ 
+-                    dat = to_dense(X[np.asarray(all_cells)][:, de_genes_indices])  # type: ignore[call-overload, index]
++                    dat = to_dense(_subset_rows_cols(cast_matrix(X), all_rows, de_genes_indices))
+                     if scale:
+                         dat = sc.pp.scale(dat)
+ 
+                     converged = False
+                     n_iter = 0
+-                    old_classes = obs[new_class_name][all_cells]
+-
+-                    nt_cells_dat_idx = all_cells[all_cells].index.get_indexer(nt_cells[nt_cells].index)
++                    gene_rows_elsewhere = np.flatnonzero((classes == gene) & split_cells & ~orig_guide_cells)
++                    old_classes = classes[orig_guide_rows]
++                    all_cells_index = obs.index[all_rows]
++                    orig_guide_cells_dat_idx = np.flatnonzero(orig_guide_cells[all_rows])
++                    nt_cells_dat_idx = np.flatnonzero(nt_cells[all_rows])
+                     nt_cells_mean = np.mean(dat[nt_cells_dat_idx], axis=0)
+ 
+                     while not converged and n_iter < iter_num:
+                         # Get all cells in current split&Gene
+-                        guide_cells = (obs[new_class_name] == gene) & split_mask
++                        guide_in_orig = classes[orig_guide_rows] == gene
++                        guide_rows = orig_guide_rows[guide_in_orig]
++                        guide_cells_dat_idx = orig_guide_cells_dat_idx[guide_in_orig]
+ 
+                         # get average value for each gene over all selected cells
+                         # all cells in current split&Gene minus all NT cells in current split
+                         # Each row is for each cell, each column is for each gene, get mean for each column
+-                        guide_cells_dat_idx = all_cells[all_cells].index.get_indexer(guide_cells[guide_cells].index)
+                         guide_cells_mean = np.mean(dat[guide_cells_dat_idx], axis=0)
+                         vec = guide_cells_mean - nt_cells_mean
+ 
+                         # project cells onto the perturbation vector
+                         pvec = np.dot(dat, vec) / np.dot(vec, vec)
+-                        pvec = pd.Series(np.asarray(pvec).flatten(), index=list(all_cells.index[all_cells]))
++                        pvec = pd.Series(np.asarray(pvec).flatten(), index=all_cells_index)
+ 
+                         if n_iter == 0:
+                             gv = pd.DataFrame(columns=["pvec", pert_key])
+                             gv["pvec"] = pvec
+                             gv[pert_key] = control
+-                            gv.loc[guide_cells, pert_key] = gene
++                            gv.loc[np.isin(np.arange(all_rows.size), guide_cells_dat_idx), pert_key] = gene
+                             if gene not in gv_list:
+                                 gv_list[gene] = {}
+                             gv_list[gene][category] = gv
+ 
+-                        means_init = np.array([[pvec[nt_cells].mean()], [pvec[guide_cells].mean()]])
+-                        std_init = np.array([pvec[nt_cells].std(), pvec[guide_cells].std()])
++                        nt_pvec = pvec.iloc[nt_cells_dat_idx]
++                        guide_pvec = pvec.iloc[guide_cells_dat_idx]
++                        means_init = np.array([[nt_pvec.mean()], [guide_pvec.mean()]])
++                        std_init = np.array([nt_pvec.std(), guide_pvec.std()])
+                         mm = MixscapeGaussianMixture(
+                             n_components=2,
+                             covariance_type="spherical",
+@@ -211,34 +220,38 @@ def mixscape(
+                             precisions_init=1 / (std_init**2),
+                             random_state=random_state,
+                             max_iter=100,
+-                            fixed_means=[pvec[nt_cells].mean(), None],
+-                            fixed_covariances=[pvec[nt_cells].std() ** 2, None],
++                            fixed_means=[nt_pvec.mean(), None],
++                            fixed_covariances=[nt_pvec.std() ** 2, None],
+                             **gmmkwargs,
+                         ).fit(np.asarray(pvec).reshape(-1, 1))
+-                        probabilities = mm.predict_proba(np.array(pvec[orig_guide_cells_index]).reshape(-1, 1))
++                        probabilities = mm.predict_proba(np.asarray(pvec)[orig_guide_cells_dat_idx].reshape(-1, 1))
+                         lik_ratio = probabilities[:, 0] / probabilities[:, 1]
+                         post_prob = 1 / (1 + lik_ratio)
+ 
+                         # based on the posterior probability, assign cells to the two classes
+                         ko_mask = post_prob > 0.5
+-                        obs.loc[np.array(orig_guide_cells_index)[ko_mask], new_class_name] = gene
+-                        obs.loc[np.array(orig_guide_cells_index)[~ko_mask], new_class_name] = f"{gene} NP"
++                        classes[orig_guide_rows[ko_mask]] = gene
++                        classes[orig_guide_rows[~ko_mask]] = f"{gene} NP"
+ 
+-                        if (obs[new_class_name][split_mask] == gene).sum() < min_de_genes:
+-                            obs.loc[guide_cells, new_class_name] = "NP"
++                        current_classes = classes[orig_guide_rows]
++                        if gene_rows_elsewhere.size + (current_classes == gene).sum() < min_de_genes:
++                            classes[gene_rows_elsewhere] = "NP"
++                            classes[guide_rows] = "NP"
+                             converged = True
+-                        current_classes = obs[new_class_name][all_cells]
++                            current_classes = classes[orig_guide_rows]
+                         if (current_classes == old_classes).all():
+                             converged = True
+                         old_classes = current_classes
+ 
+                         n_iter += 1
+ 
+-                    obs.loc[(obs[new_class_name] == gene) & split_mask, new_class_name] = f"{gene} {perturbation_type}"
++                    classes[(classes == gene) & split_cells] = f"{gene} {perturbation_type}"
+ 
+-                obs.loc[orig_guide_cells_index, f"{new_class_name}_p_{perturbation_type.lower()}"] = post_prob
++                post_probs[orig_guide_rows] = post_prob
+             if gene_targets:
+-                obs[f"{new_class_name}_global"] = [a.split(" ")[-1] for a in obs[new_class_name]]
++                obs[new_class_name] = pd.Series(classes, index=obs.index, dtype=class_dtype)
++                obs[f"{new_class_name}_global"] = [a.split(" ")[-1] for a in classes]
++        obs[f"{new_class_name}_p_{perturbation_type.lower()}"] = post_probs
+         adata.uns["mixscape"] = gv_list
+ 
+         if copy:
+@@ -323,25 +336,26 @@ def lda(
+             logfc_threshold=logfc_threshold,
+             test_method=test_method,
+         )
+-        adata_subset = adata[
+-            (adata.obs[mixscape_class_global] == perturbation_type) | (adata.obs[mixscape_class_global] == control)
+-        ]
++        subset_cells = (adata.obs[mixscape_class_global] == perturbation_type) | (
++            adata.obs[mixscape_class_global] == control
++        )
++        adata_subset = adata[subset_cells]
+         X = cast_matrix(adata_subset.X) - cast_matrix(adata_subset.X).mean(0)
++        pert_labels = adata.obs[pert_key]
+         projected_pcs: dict[str, np.ndarray] = {}
+         # performs PCA on each mixscape class separately and projects each subspace onto all cells in the data.
+         for _, (key, value) in enumerate(perturbation_markers.items()):
+             if len(value) == 0:
+                 continue
+             else:
+-                gene_subset = adata_subset[
+-                    (adata_subset.obs[pert_key] == key[1]) | (adata_subset.obs[pert_key] == control)
+-                ].copy()
++                gene_rows = np.flatnonzero(subset_cells & ((pert_labels == key[1]) | (pert_labels == control)))
++                gene_subset = sc.AnnData(X=cast_matrix(adata.X)[gene_rows], var=adata.var.copy())
+                 with warnings.catch_warnings():
+                     warnings.simplefilter("ignore", UserWarning)
+                     sc.pp.scale(gene_subset)
+                 sc.tl.pca(gene_subset, n_comps=n_comps)
+                 # project cells into PCA space of gene_subset
+-                projected_pcs[key[1]] = np.asarray(np.dot(X, gene_subset.varm["PCs"]))
++                projected_pcs[key[1]] = np.asarray(np.dot(X, cast_dense(gene_subset.varm["PCs"])))
+         # concatenate all pcs into a single matrix.
+         projected_pcs_array = np.concatenate(list(projected_pcs.values()), axis=1)
+ 

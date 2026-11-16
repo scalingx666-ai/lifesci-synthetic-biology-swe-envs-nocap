@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1013"
+description = "Update `plot_effects_barplot()` to remove FutureWarning"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "cf00d1e22b7038649b84a77e32c47294e38e5d69"
+reference = "https://github.com/scverse/pertpy/pull/1013"
+source_access = "auto"
+built_at = "2026-11-15T16:42:40.509108+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:6e93818d6763eff4124f956fe498565fe1ec2e2dbf61e0b8d1a17751125dc615"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-06-09T19:04:14Z"
+diff_format = "unified"
+context_files = [
+    "pertpy/tools/_coda/_base_coda.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 8
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

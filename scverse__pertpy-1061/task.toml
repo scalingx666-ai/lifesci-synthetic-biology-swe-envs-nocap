@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1061"
+description = "Only transfer constant obs columns to pseudobulk"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "40dfeb6a5a50ef557d0d57baaea4aa33e6cbcf82"
+reference = "https://github.com/scverse/pertpy/pull/1061"
+source_access = "auto"
+built_at = "2026-11-15T16:41:38.755905+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:bfe235e7e3c931abc8dc2699f8f2f62cb62353bf369ef5b3e85a5c410923aa60"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-08-04T14:54:56Z"
+diff_format = "unified"
+context_files = [
+    "src/pertpy/tools/_perturbation_space/_perturbation_space.py",
+    "src/pertpy/tools/_perturbation_space/_simple.py",
+    "tests/tools/_perturbation_space/test_simple_perturbation_space.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 83
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

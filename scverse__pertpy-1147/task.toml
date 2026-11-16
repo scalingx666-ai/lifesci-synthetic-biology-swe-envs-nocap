@@ -1,0 +1,72 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1147"
+description = "Fit linear mixed models with a random intercept in the differential expression interface"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "d4df75ac52e682a886a1cf80700db9059ddf24a2"
+reference = "https://github.com/scverse/pertpy/pull/1147"
+source_access = "auto"
+built_at = "2026-11-15T16:38:46.164708+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:7ae2224de80b6d540aa90e444b29a3881e14ccb5b6a91281290c0fc09ae85216"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-10-22T13:35:54Z"
+diff_format = "unified"
+context_files = [
+    "docs/changelog.md",
+    "docs/tutorials/notebooks",
+    "src/pertpy/_parallel.py",
+    "src/pertpy/tools/_dialogue.py",
+    "src/pertpy/tools/_differential_gene_expression/_base.py",
+    "src/pertpy/tools/_differential_gene_expression/_statsmodels.py",
+    "src/pertpy/tools/_milo.py",
+    "src/pertpy/tools/_milo_glmm.py",
+    "src/pertpy/tools/_mixed_models.py",
+    "tests/tools/_differential_gene_expression/test_statsmodels.py",
+    "tests/tools/test_milo_glmm.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 999
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

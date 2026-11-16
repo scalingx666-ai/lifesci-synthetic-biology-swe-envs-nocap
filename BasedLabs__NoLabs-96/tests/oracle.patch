@@ -1,0 +1,216 @@
+diff --git a/.github/workflows/rosettafold-master.yaml b/.github/workflows/rosettafold-master.yaml
+new file mode 100644
+index 00000000..a257f006
+--- /dev/null
++++ b/.github/workflows/rosettafold-master.yaml
+@@ -0,0 +1,29 @@
++name: rosettafold-master
++run-name: rosettafold-master
++
++# Build and push nolabs image using GitHub Cache API
++# Only if relevant files were changed
++
++on: workflow_dispatch
++
++jobs:
++  build:
++    permissions:
++      contents: read
++      packages: write
++
++    uses: ./.github/workflows/build-docker.yaml
++    with:
++      microservice_name: "rosettafold"
++
++  push:
++    if: github.repository == 'BasedLabs/NoLabs'
++    needs: build
++
++    permissions:
++      contents: read
++      packages: write
++
++    uses: ./.github/workflows/push-docker.yaml
++    with:
++      microservice_name: "rosettafold"
+diff --git a/.github/workflows/rosettafold-pr.yaml b/.github/workflows/rosettafold-pr.yaml
+new file mode 100644
+index 00000000..4922b81b
+--- /dev/null
++++ b/.github/workflows/rosettafold-pr.yaml
+@@ -0,0 +1,22 @@
++name: rosettafold-pr
++run-name: rosettafold-pr
++
++# Build and push nolabs image using GitHub Cache API
++# Only if relevant files were changed
++
++on:
++  pull_request:
++    branches:
++      - master
++    paths:
++      - 'microservices/rosettafold/**'
++
++jobs:
++  build:
++    permissions:
++      contents: read
++      packages: write
++
++    uses: ./.github/workflows/build-docker.yaml
++    with:
++      microservice_name: "rosettafold"
+diff --git a/README.md b/README.md
+index 04abdc2b..b90d6e12 100644
+--- a/README.md
++++ b/README.md
+@@ -314,7 +314,7 @@ Model: [RoseTTAFold](https://github.com/RosettaCommons/RoseTTAFold)
+ docker compose up rosettafold
+ ```
+ 
+-Swagger UI will be available on http://localhost:5738/docs
++Swagger UI will be available on http://localhost:5737/docs
+ 
+ or
+ [Install as python package](microservices/rosettafold/client/README.md)
+diff --git a/compose.yaml b/compose.yaml
+index 0bfb3d8a..75da0766 100644
+--- a/compose.yaml
++++ b/compose.yaml
+@@ -117,6 +117,13 @@ services:
+       context: microservices/p2rank
+       dockerfile: build/Dockerfile
+     command: --host=0.0.0.0 --port=5731
++    deploy:
++      resources:
++        reservations:
++          devices:
++            - driver: nvidia
++              count: 1
++              capabilities: [ gpu ]
+   msa_light:
+     image: 'ghcr.io/basedlabs/msa-light:1.0.0'
+     network_mode: host
+@@ -142,7 +149,7 @@ services:
+       - TAVILY_API_KEY=${TAVILY_API_KEY}
+     command: --host=0.0.0.0 --port=5738
+   rosettafold:
+-    image: 'ghcr.io/basedlabs/rosettafold:1.0.0'
++    image: 'ghcr.io/basedlabs/rosettafold:1.0.1'
+     network_mode: host
+     build:
+       context: microservices/rosettafold
+@@ -151,7 +158,14 @@ services:
+       - /media/jt/Local Disk/RoseTTAFold/bfd:/RoseTTAFold/bfd
+       - /media/jt/Local Disk/RoseTTAFold/pdb100_2021Mar03:/RoseTTAFold/pdb100_2021Mar03
+       - /media/jt/Local Disk/RoseTTAFold/UniRef30_2020_06:/RoseTTAFold/UniRef30_2020_06
+-    command: --host=0.0.0.0 --port=5738
++    command: --host=0.0.0.0 --port=5737
++    deploy:
++      resources:
++        reservations:
++          devices:
++            - driver: nvidia
++              count: 1
++              capabilities: [ gpu ]
+   reinvent:
+     image: 'ghcr.io/basedlabs/reinvent:1.0.1'
+     network_mode: host
+@@ -159,6 +173,13 @@ services:
+       context: microservices/reinvent
+       dockerfile: build/Dockerfile
+     command: --host=0.0.0.0 --port=5790
++    deploy:
++      resources:
++        reservations:
++          devices:
++            - driver: nvidia
++              count: 1
++              capabilities: [ gpu ]
+   blast_query:
+     image: 'ghcr.io/basedlabs/blast_query:1.0.0'
+     network_mode: host
+@@ -167,7 +188,7 @@ services:
+       dockerfile: build/Dockerfile
+     command: --host=0.0.0.0 --port=5740 --workers=1
+   nolabs:
+-    image: 'ghcr.io/basedlabs/nolabs:2.1.7'
++    image: 'ghcr.io/basedlabs/nolabs:2.1.8'
+     network_mode: host
+     build:
+       context: .
+diff --git a/microservices/rosettafold/microservice/services.py b/microservices/rosettafold/microservice/services.py
+index a725510d..72150d4a 100644
+--- a/microservices/rosettafold/microservice/services.py
++++ b/microservices/rosettafold/microservice/services.py
+@@ -84,7 +84,10 @@ async def _run_rosettafold(self, fasta: bytes, a3m: bytes) -> RunRosettaFoldResp
+             msa_file.write_bytes(a3m)
+             script = f'./run_RF2_msa.sh {msa_file.full_path} {os.path.join(models_dir.full_path, 'model')}'
+         else:
+-            self._root.add_file(self._fasta_file_name).write_bytes(fasta)
++            sequence = fasta.decode()
++            if '>' not in sequence:
++                sequence = f'>sequence\n{sequence}'
++            self._root.add_file(self._fasta_file_name).write_bytes(sequence.encode())
+             runner = self._root.files.first_or_default(lambda o: o.name == 'run_RF2.sh')
+             script = f'CPU={cpu_count} MEM={gb} ./{runner.name} {self._fasta_file_name} -o {self._fasta_name}'
+ 
+diff --git a/nolabs/application/use_cases/folding/use_cases.py b/nolabs/application/use_cases/folding/use_cases.py
+index e079ada5..3c42fbbf 100644
+--- a/nolabs/application/use_cases/folding/use_cases.py
++++ b/nolabs/application/use_cases/folding/use_cases.py
+@@ -5,6 +5,7 @@
+     'GetJobStatusFeature'
+ ]
+ 
++import tempfile
+ from typing import List, Tuple, Optional
+ from uuid import UUID
+ 
+@@ -220,11 +221,13 @@ def request_factory(self, job_id: JobId, sequence: str, folding_backend: Folding
+             return (response.pdb_content, [])
+ 
+         if folding_backend == FoldingBackendEnum.rosettafold:
+-            response = self._rosettafold.run_folding_run_folding_post(
+-                job_id=job_id.value,
+-                fasta=sequence,
+-                _request_timeout=(1000.0, 1000.0)
+-            )
+-            return (response.pdb_content.anyof_schema_1_validator, response.errors)
++            with tempfile.NamedTemporaryFile(mode="w+t", delete=False) as temp_file:
++                temp_file.write(sequence)
++                temp_file.close()
++                response = self._rosettafold.run_folding_run_folding_post(
++                    fasta=temp_file.name,
++                    _request_timeout=(1000.0, 1000.0)
++                )
++                return (response.pdb_content.anyof_schema_1_validator, response.errors)
+ 
+         raise NoLabsException(ErrorCodes.folding_method_unknown, [str(folding_backend)])
+diff --git a/nolabs/infrastructure/appsettings.dev.json b/nolabs/infrastructure/appsettings.dev.json
+index ff80f74a..47a521fd 100644
+--- a/nolabs/infrastructure/appsettings.dev.json
++++ b/nolabs/infrastructure/appsettings.dev.json
+@@ -22,7 +22,7 @@
+     "microservice": "http://127.0.0.1:5733"
+   },
+   "rosettafold": {
+-    "microservice": "http://127.0.0.1:5736"
++    "microservice": "http://127.0.0.1:5737"
+   },
+   "solubility": {
+     "microservice": "http://127.0.0.1:5786"
+diff --git a/nolabs/infrastructure/appsettings.local.json b/nolabs/infrastructure/appsettings.local.json
+index ff80f74a..47a521fd 100644
+--- a/nolabs/infrastructure/appsettings.local.json
++++ b/nolabs/infrastructure/appsettings.local.json
+@@ -22,7 +22,7 @@
+     "microservice": "http://127.0.0.1:5733"
+   },
+   "rosettafold": {
+-    "microservice": "http://127.0.0.1:5736"
++    "microservice": "http://127.0.0.1:5737"
+   },
+   "solubility": {
+     "microservice": "http://127.0.0.1:5786"

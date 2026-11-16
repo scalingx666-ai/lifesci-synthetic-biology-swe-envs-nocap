@@ -1,0 +1,67 @@
+diff --git a/pertpy/tools/_differential_gene_expression/_base.py b/pertpy/tools/_differential_gene_expression/_base.py
+index 75392fce..d879c61d 100644
+--- a/pertpy/tools/_differential_gene_expression/_base.py
++++ b/pertpy/tools/_differential_gene_expression/_base.py
+@@ -836,7 +836,11 @@ def _get_significance(p_val):
+         df = results_df.pivot(index=contrast_col, columns=symbol_col, values=log2fc_col)[var_names]
+ 
+         plt.figure(figsize=figsize)
+-        sns.heatmap(df, **heatmap_kwargs, cmap="coolwarm", center=0, cbar_kws={"label": "Log2 fold change"})
++        # Ensure tick labels are shown by default (fixes #755)
++        # Users can override via heatmap_kwargs
++        default_heatmap_kwargs = {"xticklabels": True, "yticklabels": True}
++        default_heatmap_kwargs.update(heatmap_kwargs)
++        sns.heatmap(df, **default_heatmap_kwargs, cmap="coolwarm", center=0, cbar_kws={"label": "Log2 fold change"})
+ 
+         _size = {"< 0.001": marker_size, "< 0.01": math.floor(marker_size / 2), "< 0.1": math.floor(marker_size / 4)}
+         x_locs, x_labels = plt.xticks()[0], [label.get_text() for label in plt.xticks()[1]]
+diff --git a/tests/tools/_differential_gene_expression/test_base.py b/tests/tools/_differential_gene_expression/test_base.py
+index 809c50fd..a1bd2130 100644
+--- a/tests/tools/_differential_gene_expression/test_base.py
++++ b/tests/tools/_differential_gene_expression/test_base.py
+@@ -1,6 +1,7 @@
+ from collections.abc import Sequence
+ from importlib.util import find_spec
+ 
++import pandas as pd
+ import pytest
+ from pandas.core.api import DataFrame
+ 
+@@ -89,3 +90,37 @@ def test_model_cond(test_adata_minimal, MockLinearModel, formula, cond_kwargs, e
+         actual_contrast = mod.cond(**cond_kwargs)
+         assert actual_contrast.tolist() == expected_contrast
+         assert actual_contrast.index.tolist() == mod.design.columns.tolist()
++
++
++def test_plot_multicomparison_fc_default_figsize(MockLinearModel, test_adata_minimal):
++    """Test that plot_multicomparison_fc works with default figsize.
++
++    Regression test for issue #755.
++    When using default figsize, seaborn heatmap may not show xticklabels,
++    causing a ValueError when trying to plot significance markers.
++    """
++    # Create mock results similar to what compare_groups would return
++    results = []
++    genes = ["GENE1", "GENE2", "GENE3", "IL5", "IL6", "IL10"]
++    contrasts = ["contrast1", "contrast2"]
++
++    for contrast in contrasts:
++        for i, gene in enumerate(genes):
++            results.append(
++                {
++                    "contrast": contrast,
++                    "variable": gene,
++                    "log_fc": 1.5 + i * 0.3,
++                    "adj_p_value": 0.001 if i < 3 else 0.05,
++                }
++            )
++
++    results_df = pd.DataFrame(results)
++
++    # Create a mock model instance
++    mod = MockLinearModel(test_adata_minimal, "~condition")
++
++    # This should not raise ValueError: 'IL5' is not in list
++    # even with default figsize (which may cause heatmap to hide labels)
++    fig = mod.plot_multicomparison_fc(results_df, return_fig=True)
++    assert fig is not None

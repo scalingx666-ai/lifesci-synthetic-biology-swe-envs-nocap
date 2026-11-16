@@ -1,0 +1,73 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1032"
+description = "Rework perturbation spaces around a perturbation-level API"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "31b2fe926d390d08fca43c52fe5adbd2a35f63c4"
+reference = "https://github.com/scverse/pertpy/pull/1032"
+source_access = "auto"
+built_at = "2026-11-15T16:42:17.863904+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:34fb477adca86984faeafae0f6b3dc7c145bea3dcb110dd344b6239632342eb2"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-07-06T13:01:13Z"
+diff_format = "unified"
+context_files = [
+    "docs/api/tools_index.md",
+    "docs/conf.py",
+    "docs/tutorials/notebooks",
+    "pertpy/_types.py",
+    "pertpy/tools/__init__.py",
+    "pertpy/tools/_perturbation_space/_discriminator_classifiers.py",
+    "pertpy/tools/_perturbation_space/_perturbation_space.py",
+    "pertpy/tools/_perturbation_space/_simple.py",
+    "tests/tools/_perturbation_space/test_classifier_spaces.py",
+    "tests/tools/_perturbation_space/test_discriminator_classifiers.py",
+    "tests/tools/_perturbation_space/test_perturbation_space_extras.py",
+    "tests/tools/_perturbation_space/test_simple_cluster_space.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 1008
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

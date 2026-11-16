@@ -1,0 +1,67 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1139"
+description = "Speed up Enrichment, perturbation spaces and cell line metadata"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "c0465139a0c636cbe8b0bc64bc3d78c3df4a6c53"
+reference = "https://github.com/scverse/pertpy/pull/1139"
+source_access = "auto"
+built_at = "2026-11-15T16:39:06.120949+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:66d9ace1e274d0eea8c60bea9ca6145abe6a2b3f76e89c6b6596808058de7ba3"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-10-01T15:52:33Z"
+diff_format = "unified"
+context_files = [
+    "src/pertpy/metadata/_cell_line.py",
+    "src/pertpy/metadata/_moa.py",
+    "src/pertpy/tools/_enrichment.py",
+    "src/pertpy/tools/_perturbation_space/_mlp_classifier.py",
+    "src/pertpy/tools/_perturbation_space/_perturbation_space.py",
+    "src/pertpy/tools/_perturbation_space/_simple.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 214
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

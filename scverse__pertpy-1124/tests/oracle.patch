@@ -1,0 +1,238 @@
+diff --git a/src/pertpy/tools/_augur.py b/src/pertpy/tools/_augur.py
+index 7b5a63d8..c81612ad 100644
+--- a/src/pertpy/tools/_augur.py
++++ b/src/pertpy/tools/_augur.py
+@@ -276,21 +276,12 @@ def sample(self, adata: AnnData, categorical: bool, subsample_size: int, random_
+         # export subsampling.
+         random.seed(random_state)
+         if categorical:
+-            label_subsamples = []
+-            y_encodings = adata.obs["y_"].unique()
+-            label_subsamples = [
+-                sc.pp.sample(
+-                    adata[adata.obs["y_"] == code, features],
+-                    n=subsample_size,
+-                    copy=True,
+-                    rng=random_state,
+-                )
+-                for code in y_encodings
+-            ]
+-
+-            subsample = ad.concat([*label_subsamples], index_unique=None)
++            y = adata.obs["y_"]
++            pools = [np.flatnonzero(y == code) for code in y.unique()]
+         else:
+-            subsample = sc.pp.sample(adata[:, features], n=subsample_size, copy=True, rng=random_state)
++            pools = [np.arange(adata.n_obs)]
++        obs_idx = np.concatenate([sc.pp.sample(pool, n=subsample_size, rng=random_state)[0] for pool in pools])
++        subsample = adata[obs_idx, features].copy()
+ 
+         # filter features with 0 variance
+         var = cast_frame(subsample.var)
+@@ -346,10 +337,10 @@ def draw_subsample(
+         random.seed(random_state)
+         if augur_mode == "permute":
+             # shuffle labels
+-            adata = adata.copy()
+-            obs = cast_frame(adata.obs)
++            obs = cast_frame(adata.obs).copy()
+             y_columns = obs.columns[obs.columns.str.startswith("y_")]
+             obs[y_columns] = obs[y_columns].sample(frac=1, random_state=random_state).values
++            adata = AnnData(X=adata.X, obs=obs, var=cast_frame(adata.var))
+ 
+         if augur_mode == "velocity":
+             # no feature selection, assuming this has already happenend in calculating velocity
+diff --git a/src/pertpy/tools/_dialogue.py b/src/pertpy/tools/_dialogue.py
+index 250e0475..1741e41f 100644
+--- a/src/pertpy/tools/_dialogue.py
++++ b/src/pertpy/tools/_dialogue.py
+@@ -19,12 +19,13 @@
+ import pandas as pd
+ import scanpy as sc
+ import seaborn as sns
+-import statsmodels.formula.api as smf
+ from fast_array_utils.conv import to_dense
++from numba import njit, prange
+ from scipy import sparse as sp
+ from scipy import stats
+ from scipy.optimize import nnls
+ from sparsecca import multicca_permute, multicca_pmd
++from statsmodels.regression.mixed_linear_model import MixedLM
+ from statsmodels.stats.multitest import multipletests
+ 
+ from pertpy._doc import _doc_params, doc_common_plot_args
+@@ -169,10 +170,31 @@ def _prepare_partial_targets(Y: np.ndarray, Z: np.ndarray) -> tuple[np.ndarray,
+     return Ys, design, n, df
+ 
+ 
++@njit(parallel=True, cache=True)
++def _rank_columns(x: np.ndarray) -> np.ndarray:
++    """Average ranks within each column of ``x``, keeping NaNs like :meth:`pandas.DataFrame.rank`."""
++    n_rows, n_cols = x.shape
++    ranks = np.empty((n_rows, n_cols))
++    for j in prange(n_cols):
++        col = x[:, j].copy()
++        order = np.argsort(col, kind="mergesort")
++        start = 0
++        while start < n_rows and not np.isnan(col[order[start]]):
++            end = start + 1
++            while end < n_rows and col[order[end]] == col[order[start]]:
++                end += 1
++            for k in range(start, end):
++                ranks[order[k], j] = (start + end + 1) / 2
++            start = end
++        for k in range(start, n_rows):
++            ranks[order[k], j] = np.nan
++    return ranks
++
++
+ def _partial_spearman_block(
+     X_block: np.ndarray, Ys: np.ndarray, design: np.ndarray, n: int, df: int
+ ) -> tuple[np.ndarray, np.ndarray]:
+-    X_rank = pd.DataFrame(X_block).rank().to_numpy()
++    X_rank = _rank_columns(np.ascontiguousarray(X_block, dtype=np.float64))
+     Xr = X_rank - design @ np.linalg.lstsq(design, X_rank, rcond=None)[0]
+     Xs = (Xr - Xr.mean(0)) / np.where(Xr.std(0, ddof=1) > 0, Xr.std(0, ddof=1), 1.0)
+     R = (Xs.T @ Ys) / (n - 1)
+@@ -320,14 +342,19 @@ def _hlm_pvalue_per_row(
+         gene_index = pd.Index([f"gene_{i}" for i in range(expression.shape[0])])
+     score = np.asarray(score, dtype=np.float64)
+     n = score.shape[0]
+-    covariates = covariates.reset_index(drop=True).copy()
+     if covariates.shape[0] != n:
+         raise ValueError("covariates rows must match score length")
+-    groups = pd.Series(sample_groups, name="_sample_").reset_index(drop=True)
+-    base = pd.concat([covariates, groups], axis=1)
+-    base["_y_"] = score
+-    extra_terms = " + ".join(f"Q('{col}')" for col in covariates.columns)
+-    formula = "_y_ ~ _x_" + (f" + {extra_terms}" if extra_terms else "")
++    groups = np.asarray(sample_groups)
++    exog = np.asfortranarray(
++        np.column_stack(
++            [
++                np.ones(n),
++                np.zeros(n),
++                pd.get_dummies(covariates, drop_first=True, dtype=np.float64).to_numpy(dtype=np.float64),
++            ]
++        )
++    )
++    complete = not (np.isnan(score).any() or np.isnan(exog).any())
+     estimates = np.full(expression.shape[0], np.nan)
+     pvalues = np.full(expression.shape[0], np.nan)
+     # statsmodels' mixedlm raises ConvergenceWarning whenever the optimizer doesn't
+@@ -338,11 +365,13 @@ def _hlm_pvalue_per_row(
+     with _warnings.catch_warnings():
+         _warnings.simplefilter("ignore", category=Warning)
+         for i in range(expression.shape[0]):
+-            base["_x_"] = expression[i]
++            if not complete or np.isnan(expression[i]).any():
++                continue
++            exog[:, 1] = expression[i]
+             try:
+-                fit = smf.mixedlm(formula, base, groups=base["_sample_"]).fit(method="bfgs", reml=False, disp=False)
+-                estimates[i] = float(fit.params.get("_x_", np.nan))
+-                pvalues[i] = float(fit.pvalues.get("_x_", np.nan))
++                fit = MixedLM(score, exog, groups).fit(method="bfgs", reml=False, disp=False)
++                estimates[i] = float(fit.params[1])
++                pvalues[i] = float(fit.pvalues[1])
+             except Exception:  # noqa: BLE001 — model may fail on degenerate covariates; record NaN
+                 continue
+     return pd.DataFrame({"estimate": estimates, "pvalue": pvalues}, index=gene_index)
+diff --git a/src/pertpy/tools/_differential_gene_expression/_simple_tests.py b/src/pertpy/tools/_differential_gene_expression/_simple_tests.py
+index 6bd2231d..34725bad 100644
+--- a/src/pertpy/tools/_differential_gene_expression/_simple_tests.py
++++ b/src/pertpy/tools/_differential_gene_expression/_simple_tests.py
+@@ -21,6 +21,8 @@
+ 
+ _RNG_KWARGS = ("rng", "random_state")
+ 
++TestStatistic = Callable[[np.ndarray, np.ndarray], float] | Callable[[np.ndarray, np.ndarray], np.ndarray]
++
+ 
+ def _var_block(x, block: slice) -> np.ndarray:
+     """Get a block of variables (columns) as a dense array."""
+@@ -46,6 +48,11 @@ def _run_test(test, x0_var: np.ndarray, x1_var: np.ndarray, paired: bool, kwargs
+     }
+ 
+ 
++def _log2_fold_change(x0: np.ndarray, x1: np.ndarray, axis: int = -1) -> np.ndarray:
++    """Log2 fold change of the means with a pseudocount, computed along `axis`."""
++    return np.log2(np.mean(x1, axis=axis) + 1e-8) - np.log2(np.mean(x0, axis=axis) + 1e-8)
++
++
+ def fdr_correction(
+     df: pd.DataFrame, pvalue_col: str = "p_value", *, key_added: str = "adj_p_value", inplace: bool = False
+ ):
+@@ -326,9 +333,7 @@ def compare_groups(
+         layer: str | None = None,
+         n_jobs: int | None = None,
+         n_permutations: int = 1000,
+-        test_statistic: Callable[[np.ndarray, np.ndarray], float] = lambda x, y: (
+-            np.log2(np.mean(y) + 1e-8) - np.log2(np.mean(x) + 1e-8)
+-        ),
++        test_statistic: TestStatistic = _log2_fold_change,
+         fit_kwargs: Mapping = MappingProxyType({}),
+         test_kwargs: Mapping = MappingProxyType({}),
+     ) -> DataFrame:
+@@ -391,9 +396,7 @@ def _test(
+         x0: np.ndarray,
+         x1: np.ndarray,
+         paired: bool,
+-        test_statistic: Callable[[np.ndarray, np.ndarray], float] = lambda x, y: (
+-            np.log2(np.mean(y) + 1e-8) - np.log2(np.mean(x) + 1e-8)
+-        ),
++        test_statistic: TestStatistic = _log2_fold_change,
+         n_permutations: int = 1000,
+         **kwargs,
+     ) -> dict[str, float]:
+diff --git a/src/pertpy/tools/_differential_gene_expression/_statsmodels.py b/src/pertpy/tools/_differential_gene_expression/_statsmodels.py
+index 278d0845..de31d9c1 100644
+--- a/src/pertpy/tools/_differential_gene_expression/_statsmodels.py
++++ b/src/pertpy/tools/_differential_gene_expression/_statsmodels.py
+@@ -4,8 +4,9 @@
+ import statsmodels.api as sm
+ from fast_array_utils.conv import to_dense
+ from joblib import delayed, effective_n_jobs
++from scipy import stats
+ from scipy.sparse import issparse
+-from tqdm.auto import tqdm
++from statsmodels.tools.tools import recipr
+ 
+ from pertpy._parallel import _MAX_BLOCK_ELEMENTS, _block_slices, _parallelize_with_joblib
+ from pertpy._types import CSBase
+@@ -75,20 +76,24 @@ def fit(
+         self._fitted = True
+ 
+     def _test_single_contrast(self, contrast, **kwargs) -> pd.DataFrame:
+-        res = []
+-        for var, mod in zip(tqdm(self.adata.var_names), self.models, strict=False):
+-            t_test = mod.t_test(contrast)
+-            res.append(
++        results = [getattr(mod, "_results", mod) for mod in self.models]
++        r_matrix = np.atleast_2d(np.asarray(contrast, dtype=np.float64))
++        effect = np.array([np.dot(r_matrix, res.params.ravel(order="F")).item() for res in results])
++        sd = np.array([np.sqrt(res.cov_params(r_matrix=r_matrix)).item() for res in results])
++        t_value = effect * recipr(sd)
++        df_resid = np.array([getattr(res, "df_resid_inference", res.df_resid) for res in results])
++        use_t = np.array([getattr(res, "use_t", False) for res in results], dtype=bool)
++        p_value = np.where(use_t, stats.t.sf(np.abs(t_value), df_resid), stats.norm.sf(np.abs(t_value))) * 2
++        return (
++            pd.DataFrame(
+                 {
+-                    "variable": var,
+-                    "p_value": t_test.pvalue,
+-                    "t_value": t_test.tvalue.item(),
+-                    "sd": t_test.sd.item(),
+-                    "log_fc": t_test.effect.item(),
++                    "variable": self.adata.var_names,
++                    "p_value": p_value,
++                    "t_value": t_value,
++                    "sd": sd,
++                    "log_fc": effect,
+                 }
+             )
+-        return (
+-            pd.DataFrame(res)
+             .sort_values("p_value")
+             .assign(adj_p_value=lambda x: statsmodels.stats.multitest.fdrcorrection(x["p_value"])[1])
+         )

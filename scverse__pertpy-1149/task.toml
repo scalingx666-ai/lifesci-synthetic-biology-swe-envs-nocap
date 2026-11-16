@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1149"
+description = "Project Mixscape signatures in float64 again"
+
+[metadata]
+difficulty = "easy"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "2e63c5d0c51fea7078ec6e7511585c3481e7d4d4"
+reference = "https://github.com/scverse/pertpy/pull/1149"
+source_access = "auto"
+built_at = "2026-11-15T16:38:43.110612+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:aebf2b37b2b1fc37602c526470c36826241d4b4fdf0c0b6329a1aede7b658b26"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-10-02T07:36:19Z"
+diff_format = "unified"
+context_files = [
+    "src/pertpy/tools/_perturbation_efficacy/_mixscape.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 2
+difficulty = "trivial"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

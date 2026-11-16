@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1185"
+description = "Keep R from loading the system libpython in the tutorial notebooks"
+
+[metadata]
+difficulty = "easy"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "f19ae9b71367539026f6668bda09b0839fb9a7e4"
+reference = "https://github.com/scverse/pertpy/pull/1185"
+source_access = "auto"
+built_at = "2026-11-15T16:37:20.043959+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:d5cbdf8621fac9f61915e864be8b28a4c2789953d3d421bdd454325034b9b215"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-10-23T10:27:15Z"
+diff_format = "unified"
+context_files = [
+    ".github/workflows/test_tutorials.yml",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 3
+difficulty = "trivial"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

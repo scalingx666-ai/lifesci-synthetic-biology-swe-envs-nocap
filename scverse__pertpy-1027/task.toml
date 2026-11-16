@@ -1,0 +1,66 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1027"
+description = "Deduplicate metadata download boilerplate"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "473da9260e7a138ede39e38d7df6e9a022990391"
+reference = "https://github.com/scverse/pertpy/pull/1027"
+source_access = "auto"
+built_at = "2026-11-15T16:42:25.052736+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:63cb32156f3f8c3f0b71735798a8846cfcf1b88a23bf7816dd189bef5e2c4eda"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-06-26T20:16:05Z"
+diff_format = "unified"
+context_files = [
+    "pertpy/metadata/_cell_line.py",
+    "pertpy/metadata/_drug.py",
+    "pertpy/metadata/_metadata.py",
+    "pertpy/metadata/_moa.py",
+    "tests/metadata/test_metadata.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 251
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

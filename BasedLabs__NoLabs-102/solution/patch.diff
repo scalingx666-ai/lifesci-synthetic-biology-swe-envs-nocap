@@ -1,0 +1,27 @@
+diff --git a/nolabs/infrastructure/.env.template b/nolabs/infrastructure/.env.template
+index f012f158..ac558c2c 100644
+--- a/nolabs/infrastructure/.env.template
++++ b/nolabs/infrastructure/.env.template
+@@ -15,7 +15,8 @@ NOLABS_REDIS_URL=redis://localhost:6379/0
+ NOLABS_CELERY_EAGER=False
+ 
+ # LOGGING
+-NOLABS_LOGGING_LEVEL=ERROR
++NOLABS_LOGGING_LEVEL=INFO
++NOLABS_STRUCTURED_LOGGING=True
+ 
+ # UVICORN
+ UVICORN_HOST=0.0.0.0
+diff --git a/nolabs/workflow/application/use_cases.py b/nolabs/workflow/application/use_cases.py
+index d081aa26..3def678a 100644
+--- a/nolabs/workflow/application/use_cases.py
++++ b/nolabs/workflow/application/use_cases.py
+@@ -353,7 +353,7 @@ async def handle(self, request: StartWorkflowComponentRequest):
+             graph = Graph(experiment_id=request.experiment_id)
+ 
+             components = []
+-            for component_data in ComponentData.objects(experiment_id=request.experiment_id):
++            for component_data in ComponentData.objects(experiment=request.experiment_id):
+                 component = Component.restore(component_data)
+                 components.append(component)
+ 

@@ -1,0 +1,73 @@
+version = "1.0"
+
+[task]
+name = "default/BasedLabs__NoLabs-30"
+description = "Moved all dti components to typescript, fixed a couple of bugs"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "NoLabs",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "BasedLabs/NoLabs"
+ref = "26deb4f29182e161510a21d5d41dce3f58680efd"
+reference = "https://github.com/BasedLabs/NoLabs/pull/30"
+source_access = "auto"
+built_at = "2026-11-16T03:19:09.428887+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:a56c31fcbd25482037cb41d911c0976710dc80107417a2271ade06869912b4dd"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2024-02-13T13:34:34Z"
+diff_format = "unified"
+context_files = [
+    "frontend/src/features/drug_discovery/ExperimentNavigation.vue",
+    "frontend/src/features/drug_discovery/components/RunDockingStep.vue",
+    "frontend/src/features/drug_discovery/components/UploadLigandsStep.vue",
+    "frontend/src/features/drug_discovery/components/UploadTargetsStep.vue",
+    "frontend/src/features/drug_discovery/components/ligands/LigandDetail.vue",
+    "frontend/src/features/drug_discovery/components/targets/TargetDetail.vue",
+    "frontend/src/features/drug_discovery/components/targets/TargetsLigandsList.vue",
+    "frontend/src/features/drug_discovery/components/targets/TargetsList.vue",
+    "frontend/src/features/drug_discovery/components/targets/types.ts",
+    "nolabs/features/drug_discovery/get_folding.py",
+    "nolabs/features/drug_discovery/result_management.py",
+    "nolabs/features/drug_discovery/services/target_file_management.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 543
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

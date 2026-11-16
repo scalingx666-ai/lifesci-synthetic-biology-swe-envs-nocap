@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/Adibvafa__CodonTransformer-33"
+description = "relax the requirement of onnxruntime to >=1.16.3"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "CodonTransformer",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "Adibvafa/CodonTransformer"
+ref = "327e134d341eefe8f06a609d0fe355e13cfb04eb"
+reference = "https://github.com/Adibvafa/CodonTransformer/pull/33"
+source_access = "auto"
+built_at = "2026-11-15T18:01:25.686000+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:2167afee6abf5b0fccb3276be34cd3b5aa60abc8d2b7b0a1192fa8cd6e7521ca"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2025-05-21T20:52:09Z"
+diff_format = "unified"
+context_files = [
+    ".github/workflows/ci.yml",
+    "pyproject.toml",
+    "requirements.txt",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 14
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

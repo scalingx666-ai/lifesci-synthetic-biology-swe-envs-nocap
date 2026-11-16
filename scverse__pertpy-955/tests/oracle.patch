@@ -1,0 +1,13 @@
+diff --git a/.pre-commit-config.yaml b/.pre-commit-config.yaml
+index 0a60b474..d21ee6c8 100644
+--- a/.pre-commit-config.yaml
++++ b/.pre-commit-config.yaml
+@@ -7,7 +7,7 @@ default_stages:
+ minimum_pre_commit_version: 2.16.0
+ repos:
+     - repo: https://github.com/biomejs/pre-commit
+-      rev: v2.4.13
++      rev: v2.4.14
+       hooks:
+           - id: biome-format
+     - repo: https://github.com/astral-sh/ruff-pre-commit

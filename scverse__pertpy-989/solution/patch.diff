@@ -1,0 +1,26 @@
+diff --git a/pertpy/tools/_coda/_base_coda.py b/pertpy/tools/_coda/_base_coda.py
+index 1152115f..aec8b444 100644
+--- a/pertpy/tools/_coda/_base_coda.py
++++ b/pertpy/tools/_coda/_base_coda.py
+@@ -861,10 +861,6 @@ def summary(self, data: AnnData | MuData, extended: bool = False, modality_key:
+             effect_df.index = pd.MultiIndex.from_product(
+                 (covariates, sample_adata.var.index.tolist()), names=["Covariate", "Cell Type"]
+             )
+-            effect_df.index = effect_df.index.set_levels(
+-                effect_df.index.levels[0].str.replace("Condition", "").str.replace("[", "").str.replace("]", ""),
+-                level=0,
+-            )
+             if model_type == "tree_agg":
+                 node_df = sample_adata.uns["scCODA_params"]["node_df"]
+ 
+@@ -1023,10 +1019,6 @@ def get_effect_df(self, data: AnnData | MuData, modality_key: str = "coda") -> p
+         effect_df.index = pd.MultiIndex.from_product(
+             (covariates, sample_adata.var.index.tolist()), names=["Covariate", "Cell Type"]
+         )
+-        effect_df.index = effect_df.index.set_levels(
+-            effect_df.index.levels[0].str.replace("Condition", "").str.replace("[", "").str.replace("]", ""),
+-            level=0,
+-        )
+ 
+         return effect_df
+ 

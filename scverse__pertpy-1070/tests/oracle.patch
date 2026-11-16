@@ -1,0 +1,257 @@
+diff --git a/docs/api/tools_index.md b/docs/api/tools_index.md
+index 6779b5b1..3a74b303 100644
+--- a/docs/api/tools_index.md
++++ b/docs/api/tools_index.md
+@@ -47,6 +47,19 @@ res_df = edgr.test_contrasts(
+ )
+ ```
+ 
++Inspecting a model summarizes the input data, the design and whether the model has been fitted, rendered as HTML in Jupyter:
++
++```text
++>>> edgr
++EdgeR
++    Data          1,525 obs × 27,085 vars
++    Layer         X
++    Design        1 + Efficacy + Treatment
++    Variables     Efficacy, Treatment
++    Coefficients  Intercept, Efficacy[T.PD], Efficacy[T.PR], Efficacy[T.SD], Treatment[T.Chemo]
++    Fitted        yes
++```
++
+ See [differential gene expression tutorial](https://pertpy.readthedocs.io/en/latest/tutorials/notebooks/differential_gene_expression.html).
+ 
+ ## Pooled CRISPR screens
+diff --git a/src/pertpy/tools/_differential_gene_expression/_base.py b/src/pertpy/tools/_differential_gene_expression/_base.py
+index 3cbe8338..2fc16a2a 100644
+--- a/src/pertpy/tools/_differential_gene_expression/_base.py
++++ b/src/pertpy/tools/_differential_gene_expression/_base.py
+@@ -2,6 +2,7 @@
+ import math
+ from abc import ABC, abstractmethod
+ from collections.abc import Iterable, Mapping, Sequence
++from html import escape
+ from itertools import zip_longest
+ from types import MappingProxyType
+ from typing import cast
+@@ -23,6 +24,28 @@
+ from pertpy.tools import PseudobulkSpace
+ from pertpy.tools._differential_gene_expression._checks import check_is_numeric_matrix
+ 
++# Colors are expressed relative to the surrounding text so that the summary renders on light and dark themes alike.
++# The table styles undo the borders, zebra stripes and centering that notebook frontends apply to rendered tables.
++_HTML_CONTAINER_STYLE = (
++    "display: inline-block; padding: 8px 12px; border: 1px solid rgba(128, 128, 128, 0.4); border-radius: 4px;"
++    " font-family: var(--jp-code-font-family, monospace); font-size: 0.85em; line-height: 1.6;"
++)
++_HTML_TITLE_STYLE = "font-weight: 600; font-size: 1.15em;"
++_HTML_DESCRIPTION_STYLE = "opacity: 0.8; margin-bottom: 6px;"
++_HTML_TABLE_STYLE = "border: none; border-collapse: collapse; margin: 0; font: inherit; background: none;"
++_HTML_ROW_STYLE = "border: none; background: none;"
++_HTML_NAME_STYLE = (
++    "border: none; padding: 0 12px 0 0; text-align: left; vertical-align: top; white-space: nowrap; opacity: 0.8;"
++)
++_HTML_VALUE_STYLE = "border: none; padding: 0; text-align: left; vertical-align: top;"
++
++
++def _format_names(names: Sequence[str], max_shown: int = 8) -> str:
++    """Join names into a single line, truncating overly long lists."""
++    if len(names) <= max_shown:
++        return ", ".join(names)
++    return f"{', '.join(names[:max_shown])}, … ({len(names)} in total)"
++
+ 
+ class MethodBase(ABC):
+     def __init__(self, adata, *, mask=None, layer=None, **kwargs):
+@@ -49,6 +72,34 @@ def data(self):
+         else:
+             return self.adata.layers[self.layer]
+ 
++    def _summary(self) -> dict[str, str]:
++        """Get the fields shown by the text and HTML representations."""
++        return {
++            "Data": f"{self.adata.n_obs:,} obs × {self.adata.n_vars:,} vars",
++            "Layer": self.layer if self.layer is not None else "X",
++        }
++
++    def __repr__(self) -> str:
++        summary = self._summary()
++        width = max(map(len, summary), default=0)
++        return "\n".join([type(self).__name__, *(f"    {name:<{width}}  {value}" for name, value in summary.items())])
++
++    def _repr_html_(self) -> str:
++        description = (type(self).__doc__ or "").strip().split("\n")[0]
++        description_html = f'<div style="{_HTML_DESCRIPTION_STYLE}">{escape(description)}</div>' if description else ""
++        rows = "".join(
++            f'<tr style="{_HTML_ROW_STYLE}"><td style="{_HTML_NAME_STYLE}">{escape(name)}</td>'
++            f'<td style="{_HTML_VALUE_STYLE}">{escape(value)}</td></tr>'
++            for name, value in self._summary().items()
++        )
++        return (
++            f'<div style="{_HTML_CONTAINER_STYLE}">'
++            f'<div style="{_HTML_TITLE_STYLE}">{escape(type(self).__name__)}</div>'
++            f"{description_html}"
++            f'<table style="{_HTML_TABLE_STYLE}"><tbody>{rows}</tbody></table>'
++            "</div>"
++        )
++
+     @classmethod
+     @abstractmethod
+     def compare_groups(
+@@ -886,6 +937,7 @@ def __init__(self, adata, design, *, mask=None, layer=None, **kwargs):
+             self.design = self.formulaic_contrasts.design_matrix
+         else:
+             self.design = design
++        self._fitted = False
+ 
+     @classmethod
+     def compare_groups(
+@@ -930,6 +982,23 @@ def variables(self):
+         else:
+             return self.formulaic_contrasts.variables
+ 
++    @property
++    def is_fitted(self) -> bool:
++        """Whether `fit` has been called on this model."""
++        return self._fitted
++
++    def _summary(self) -> dict[str, str]:
++        summary = super()._summary()
++        if self.formulaic_contrasts is None:
++            summary["Design"] = f"custom matrix ({self.design.shape[0]:,} × {self.design.shape[1]:,})"
++        else:
++            summary["Design"] = str(self.design.model_spec.formula)
++            summary["Variables"] = _format_names(sorted(self.variables))
++        if hasattr(self.design, "columns"):
++            summary["Coefficients"] = _format_names([str(column) for column in self.design.columns])
++        summary["Fitted"] = "yes" if self.is_fitted else "no"
++        return summary
++
+     @abstractmethod
+     def _check_counts(self):
+         """Check that counts are valid for the specific method.
+diff --git a/src/pertpy/tools/_differential_gene_expression/_edger.py b/src/pertpy/tools/_differential_gene_expression/_edger.py
+index 2edae407..88b3b04b 100644
+--- a/src/pertpy/tools/_differential_gene_expression/_edger.py
++++ b/src/pertpy/tools/_differential_gene_expression/_edger.py
+@@ -68,6 +68,7 @@ def fit(self, **kwargs):  # adata, design, mask, layer
+ 
+         ro.globalenv["fit"] = fit
+         self.fit = fit
++        self._fitted = True
+ 
+     def _test_single_contrast(self, contrast: Sequence[float], **kwargs) -> pd.DataFrame:  # noqa: D417
+         """Conduct test for each contrast and return a data frame.
+diff --git a/src/pertpy/tools/_differential_gene_expression/_pydeseq2.py b/src/pertpy/tools/_differential_gene_expression/_pydeseq2.py
+index 3e8a35a1..1e5e22d1 100644
+--- a/src/pertpy/tools/_differential_gene_expression/_pydeseq2.py
++++ b/src/pertpy/tools/_differential_gene_expression/_pydeseq2.py
+@@ -70,6 +70,7 @@ def fit(self, **kwargs) -> None:
+ 
+         dds.deseq2()
+         self.dds = dds
++        self._fitted = True
+ 
+     @_doc_params(common_plot_args=doc_common_plot_args)
+     def plot_disp_ests(  # pragma: no cover # noqa: D417
+@@ -122,7 +123,7 @@ def plot_disp_ests(  # pragma: no cover # noqa: D417
+         Preview:
+             .. image:: /_static/docstring_previews/de_disp_ests.png
+         """
+-        if not hasattr(self, "dds"):
++        if not self.is_fitted:
+             raise ValueError("Model not fitted yet. Call .fit() first.")
+ 
+         dds = self.dds
+diff --git a/src/pertpy/tools/_differential_gene_expression/_statsmodels.py b/src/pertpy/tools/_differential_gene_expression/_statsmodels.py
+index f16ce3fa..278d0845 100644
+--- a/src/pertpy/tools/_differential_gene_expression/_statsmodels.py
++++ b/src/pertpy/tools/_differential_gene_expression/_statsmodels.py
+@@ -72,6 +72,7 @@ def fit(
+             )
+             for model in block_models
+         ]
++        self._fitted = True
+ 
+     def _test_single_contrast(self, contrast, **kwargs) -> pd.DataFrame:
+         res = []
+diff --git a/tests/tools/_differential_gene_expression/test_base.py b/tests/tools/_differential_gene_expression/test_base.py
+index aa69b833..0a16a116 100644
+--- a/tests/tools/_differential_gene_expression/test_base.py
++++ b/tests/tools/_differential_gene_expression/test_base.py
+@@ -9,7 +9,7 @@
+ if find_spec("formulaic_contrasts") is None or find_spec("formulaic") is None:
+     pytestmark = pytest.mark.skip(reason="formulaic_contrasts and formulaic not available")
+ 
+-from pertpy.tools._differential_gene_expression import LinearModelBase
++from pertpy.tools._differential_gene_expression import LinearModelBase, TTest
+ 
+ 
+ @pytest.fixture
+@@ -101,6 +101,52 @@ def test_test_contrasts_rejects_zero_contrast(MockLinearModel, test_adata_minima
+         mod.test_contrasts({"interaction": np.zeros(2)})
+ 
+ 
++def test_repr(MockLinearModel, test_adata_minimal):
++    mod = MockLinearModel(test_adata_minimal, "~ condition + donor")
++    assert repr(mod).splitlines() == [
++        "_MockLinearModel",
++        "    Data          80 obs × 2 vars",
++        "    Layer         X",
++        "    Design        1 + condition + donor",
++        "    Variables     condition, donor",
++        "    Coefficients  Intercept, condition[T.B], donor[T.D1], donor[T.D2], donor[T.D3]",
++        "    Fitted        no",
++    ]
++
++
++def test_repr_custom_design(MockLinearModel, test_adata_minimal):
++    mod = MockLinearModel(test_adata_minimal, np.ones((test_adata_minimal.n_obs, 1)))
++    assert repr(mod).splitlines() == [
++        "_MockLinearModel",
++        "    Data    80 obs × 2 vars",
++        "    Layer   X",
++        "    Design  custom matrix (80 × 1)",
++        "    Fitted  no",
++    ]
++
++
++def test_repr_without_design(test_adata_minimal):
++    assert repr(TTest(test_adata_minimal)).splitlines() == [
++        "TTest",
++        "    Data   80 obs × 2 vars",
++        "    Layer  X",
++    ]
++
++
++def test_repr_truncates_many_coefficients(MockLinearModel, test_adata_minimal):
++    mod = MockLinearModel(test_adata_minimal, "~ 0 + pairing")
++    assert "… (40 in total)" in repr(mod)
++
++
++def test_repr_html(MockLinearModel, test_adata_minimal):
++    html = MockLinearModel(test_adata_minimal, "~ C(donor, contr.treatment(base='D2'))")._repr_html_()
++    assert html.startswith("<div") and html.endswith("</div>")
++    assert ">_MockLinearModel</div>" in html
++    assert ">80 obs × 2 vars</td>" in html
++    assert "base=&#x27;D2&#x27;" in html
++    assert "base='D2'" not in html
++
++
+ def test_plot_multicomparison_fc_many_genes(MockLinearModel, test_adata_minimal):
+     """Test that plot_multicomparison_fc works even when heatmap hides tick labels.
+ 
+diff --git a/tests/tools/_differential_gene_expression/test_statsmodels.py b/tests/tools/_differential_gene_expression/test_statsmodels.py
+index 05b76983..47752fb0 100644
+--- a/tests/tools/_differential_gene_expression/test_statsmodels.py
++++ b/tests/tools/_differential_gene_expression/test_statsmodels.py
+@@ -16,7 +16,9 @@ def test_statsmodels(test_adata, kwargs):
+     from pertpy.tools._differential_gene_expression import Statsmodels
+ 
+     method = Statsmodels(adata=test_adata, design="~condition")
++    assert not method.is_fitted
+     method.fit(**kwargs)
++    assert method.is_fitted
+     res_df = method.test_contrasts(np.array([0, 1]))
+     # Check that the result has the correct number of rows
+     assert len(res_df) == test_adata.n_vars

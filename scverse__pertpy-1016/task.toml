@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1016"
+description = "Fix tascCODA always returning insignificant results"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "652395a9fd61092c0869d3babe02bbe14a84bc91"
+reference = "https://github.com/scverse/pertpy/pull/1016"
+source_access = "auto"
+built_at = "2026-11-15T16:42:36.056519+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:86c42e100d5af35d148f99ccb21dd18226f10c6185847e1167945f47db372f9d"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-06-10T12:08:43Z"
+diff_format = "unified"
+context_files = [
+    ".github/workflows/test.yml",
+    "pertpy/tools/_coda/_base_coda.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 9
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

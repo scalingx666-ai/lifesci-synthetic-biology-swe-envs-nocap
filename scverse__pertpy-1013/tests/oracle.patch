@@ -1,0 +1,22 @@
+diff --git a/pertpy/tools/_coda/_base_coda.py b/pertpy/tools/_coda/_base_coda.py
+index 6e6bb018..7b5c23e3 100644
+--- a/pertpy/tools/_coda/_base_coda.py
++++ b/pertpy/tools/_coda/_base_coda.py
+@@ -1501,12 +1501,14 @@ def plot_effects_barplot(  # pragma: no cover # noqa: D417
+                 aspect=aspect,
+             )
+ 
+-            g.map(
++            g.map_dataframe(
+                 sns.barplot,
+-                "Cell Type",
+-                "value",
++                x="Cell Type",
++                y="value",
++                hue="Cell Type",
+                 palette=palette,
+                 order=level_order,
++                hue_order=level_order,
+                 **args_barplot,
+             )
+             g.set_xticklabels(rotation=90)

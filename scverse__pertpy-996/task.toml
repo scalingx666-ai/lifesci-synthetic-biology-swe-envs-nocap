@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-996"
+description = "docs: refresh DE docstring pseudobulk examples"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "8f93ff82ceef7138bd46ec46e975eb6fc2ef652f"
+reference = "https://github.com/scverse/pertpy/pull/996"
+source_access = "auto"
+built_at = "2026-11-15T16:43:02.691362+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:5a56230ffd84740fe2f7ed6b2eb0a6590d779b8e2d8633778814df0338b25155"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-25T10:19:34Z"
+diff_format = "unified"
+context_files = [
+    "docs/conf.py",
+    "docs/tutorials/notebooks",
+    "pertpy/tools/_differential_gene_expression/_base.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 53
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

@@ -1,0 +1,409 @@
+diff --git a/pertpy/_parallel.py b/pertpy/_parallel.py
+new file mode 100644
+index 00000000..7df481b1
+--- /dev/null
++++ b/pertpy/_parallel.py
+@@ -0,0 +1,54 @@
++"""Helpers for distributing per-variable computations across jobs.
++
++`_parallelize_with_joblib` is adapted from scirpy (BSD 3-clause).
++"""
++
++import math
++from collections.abc import Iterable, Iterator
++from typing import Any
++
++import numpy as np
++from joblib import Parallel
++from tqdm.auto import tqdm
++
++from pertpy._logger import logger
++
++# Upper bound for densified blocks of variables, ~64 MB in float64.
++_MAX_BLOCK_ELEMENTS = 8_000_000
++
++
++def _parallelize_with_joblib(delayed_objects: Iterable[Any], *, total: int | None = None, **kwargs) -> Iterator[Any]:
++    """Run `delayed_objects` through `joblib.Parallel`, with a progress bar if the backend supports it."""
++    try:
++        return iter(tqdm(Parallel(return_as="generator", **kwargs)(delayed_objects), total=total))
++    except ValueError:
++        logger.info(
++            "Backend doesn't support return_as='generator'. No progress bar will be shown. "
++            "Consider setting verbosity in joblib.parallel_config"
++        )
++        return iter(Parallel(return_as="list", **kwargs)(delayed_objects))
++
++
++def _block_slices(n_items: int, *, n_blocks: int = 1, max_block_size: int | None = None) -> list[slice]:
++    """Split `range(n_items)` into contiguous blocks, of `max_block_size` items at most."""
++    if n_items <= 0:
++        return []
++    block_size = math.ceil(n_items / max(1, min(n_blocks, n_items)))
++    if max_block_size is not None:
++        block_size = min(block_size, max(1, max_block_size))
++    return [slice(start, min(start + block_size, n_items)) for start in range(0, n_items, block_size)]
++
++
++def _spawn_rngs(rng, n: int) -> list[np.random.Generator | None]:
++    """Derive `n` independent generators from a seed, generator or None, deterministically."""
++    if rng is None:
++        return [None] * n
++    if isinstance(rng, np.random.BitGenerator):
++        rng = np.random.default_rng(rng)
++    if isinstance(rng, np.random.Generator):
++        return list(rng.spawn(n))
++    if isinstance(rng, np.random.SeedSequence):
++        return [np.random.default_rng(seed) for seed in rng.spawn(n)]
++    if isinstance(rng, np.random.RandomState):
++        return [np.random.default_rng(int(seed)) for seed in rng.randint(0, 2**31 - 1, size=n)]
++    return [np.random.default_rng(seed) for seed in np.random.SeedSequence(rng).spawn(n)]
+diff --git a/pertpy/tools/_differential_gene_expression/_simple_tests.py b/pertpy/tools/_differential_gene_expression/_simple_tests.py
+index fe0d2c5d..6bd2231d 100644
+--- a/pertpy/tools/_differential_gene_expression/_simple_tests.py
++++ b/pertpy/tools/_differential_gene_expression/_simple_tests.py
+@@ -10,12 +10,41 @@
+ import scipy.stats
+ import statsmodels
+ from anndata import AnnData
++from fast_array_utils.conv import to_dense
++from joblib import delayed
+ from pandas.core.api import DataFrame
+ from scipy.sparse import diags, issparse
+-from tqdm.auto import tqdm
++
++from pertpy._parallel import _MAX_BLOCK_ELEMENTS, _block_slices, _parallelize_with_joblib, _spawn_rngs
+ 
+ from ._base import MethodBase
+ 
++_RNG_KWARGS = ("rng", "random_state")
++
++
++def _var_block(x, block: slice) -> np.ndarray:
++    """Get a block of variables (columns) as a dense array."""
++    return to_dense(x[:, block])
++
++
++def _run_vectorized_test(test, x0_block: np.ndarray, x1_block: np.ndarray, paired: bool, kwargs: dict) -> dict:
++    """Test a block of variables at once, returning one array of values per metric."""
++    return {
++        "log_fc": np.log2(np.mean(x1_block, axis=0)) - np.log2(np.mean(x0_block, axis=0)),
++        **{
++            metric: np.atleast_1d(np.asarray(value))
++            for metric, value in test(x0_block, x1_block, paired, **kwargs).items()
++        },
++    }
++
++
++def _run_test(test, x0_var: np.ndarray, x1_var: np.ndarray, paired: bool, kwargs: dict) -> dict:
++    """Test a single variable."""
++    return {
++        "log_fc": np.log2(np.mean(x1_var)) - np.log2(np.mean(x0_var)),
++        **test(x0_var, x1_var, paired, **kwargs),
++    }
++
+ 
+ def fdr_correction(
+     df: pd.DataFrame, pvalue_col: str = "p_value", *, key_added: str = "adj_p_value", inplace: bool = False
+@@ -31,6 +60,10 @@ def fdr_correction(
+ 
+ 
+ class SimpleComparisonBase(MethodBase):
++    #: Counterpart of :func:`_test` that tests a block of variables at once, which is orders of magnitude faster.
++    #: If None, :func:`_test` is called per variable instead.
++    _test_vectorized: Callable[..., dict[str, np.ndarray]] | None = None
++
+     @staticmethod
+     @abstractmethod
+     def _test(x0: np.ndarray, x1: np.ndarray, paired: bool, **kwargs) -> dict[str, float]:
+@@ -52,7 +85,7 @@ def _test(x0: np.ndarray, x1: np.ndarray, paired: bool, **kwargs) -> dict[str, f
+         ...
+ 
+     def _compare_single_group(
+-        self, baseline_idx: np.ndarray, comparison_idx: np.ndarray, *, paired: bool, **kwargs
++        self, baseline_idx: np.ndarray, comparison_idx: np.ndarray, *, paired: bool, n_jobs: int | None = None, **kwargs
+     ) -> DataFrame:
+         """Perform a single comparison between two groups.
+ 
+@@ -61,6 +94,7 @@ def _compare_single_group(
+             comparison_idx: Numeric indices indicating which observations are in the comparison/treatment group
+             paired: Whether to perform a paired test. Note that in the case of a paired test,
+                 the indices must be ordered such that paired observations appear at the same position.
++            n_jobs: Number of jobs to distribute the variables over, passed to `joblib.Parallel`.
+             **kwargs: kwargs passed to the test function
+         """
+         if paired:
+@@ -69,23 +103,69 @@ def _compare_single_group(
+         x0 = self.data[baseline_idx, :]
+         x1 = self.data[comparison_idx, :]
+ 
+-        # In the following loop, we are doing a lot of column slicing -- which is significantly
++        # In the following, we are doing a lot of column slicing -- which is significantly
+         # more efficient in csc format.
+         if issparse(self.data):
+             x0 = x0.tocsc()
+             x1 = x1.tocsc()
+ 
+-        res: list[dict[str, float]] = []
+-        for var in tqdm(self.adata.var_names):
+-            tmp_x0 = x0[:, self.adata.var_names == var]
+-            tmp_x0 = np.asarray(tmp_x0.todense()).flatten() if issparse(tmp_x0) else tmp_x0.flatten()
+-            tmp_x1 = x1[:, self.adata.var_names == var]
+-            tmp_x1 = np.asarray(tmp_x1.todense()).flatten() if issparse(tmp_x1) else tmp_x1.flatten()
+-            test_result = self._test(tmp_x0, tmp_x1, paired, **kwargs)
+-            mean_x0 = np.mean(tmp_x0)
+-            mean_x1 = np.mean(tmp_x1)
+-            res.append({"variable": var, "log_fc": np.log2(mean_x1) - np.log2(mean_x0), **test_result})
+-        return pd.DataFrame(res).sort_values("p_value")
++        res = (
++            self._compare_blockwise(x0, x1, paired=paired, n_jobs=n_jobs, **kwargs)
++            if type(self)._test_vectorized is not None
++            else self._compare_per_variable(x0, x1, paired=paired, n_jobs=n_jobs, **kwargs)
++        )
++        res.insert(0, "variable", self.adata.var_names.to_numpy())
++        return res.sort_values("p_value")
++
++    def _compare_blockwise(self, x0, x1, *, paired: bool, n_jobs: int | None, **kwargs) -> DataFrame:
++        """Test all variables with the vectorized test, in blocks of bounded size."""
++        test = type(self)._test_vectorized
++        blocks = _block_slices(x0.shape[1], max_block_size=_MAX_BLOCK_ELEMENTS // max(x0.shape[0] + x1.shape[0], 1))
++        if not blocks:
++            return pd.DataFrame()
++        # Densifying here rather than in the workers keeps the full matrices from being sent around.
++        if len(blocks) == 1:
++            results = [
++                _run_vectorized_test(test, _var_block(x0, blocks[0]), _var_block(x1, blocks[0]), paired, dict(kwargs))
++            ]
++        else:
++            results = list(
++                _parallelize_with_joblib(
++                    (
++                        delayed(_run_vectorized_test)(
++                            test, _var_block(x0, block), _var_block(x1, block), paired, dict(kwargs)
++                        )
++                        for block in blocks
++                    ),
++                    total=len(blocks),
++                    n_jobs=n_jobs,
++                )
++            )
++        return pd.DataFrame({metric: np.concatenate([res[metric] for res in results]) for metric in results[0]})
++
++    def _compare_per_variable(self, x0, x1, *, paired: bool, n_jobs: int | None, **kwargs) -> DataFrame:
++        """Test one variable at a time, distributing the variables over jobs."""
++        test = type(self)._test
++        n_vars = x0.shape[1]
++        # One stream per variable keeps results independent of n_jobs.
++        rng_kwarg = next((key for key in _RNG_KWARGS if key in kwargs), None)
++        rngs = _spawn_rngs(kwargs[rng_kwarg], n_vars) if rng_kwarg is not None else None
++        var_kwargs = [dict(kwargs)] * n_vars if rngs is None else [{**kwargs, rng_kwarg: rng} for rng in rngs]
++        results = _parallelize_with_joblib(
++            (
++                delayed(_run_test)(
++                    test,
++                    _var_block(x0, slice(i, i + 1)).ravel(),
++                    _var_block(x1, slice(i, i + 1)).ravel(),
++                    paired,
++                    var_kwargs[i],
++                )
++                for i in range(n_vars)
++            ),
++            total=n_vars,
++            n_jobs=n_jobs,
++        )
++        return pd.DataFrame(list(results))
+ 
+     @classmethod
+     def compare_groups(
+@@ -98,6 +178,7 @@ def compare_groups(
+         paired_by: str | None = None,
+         mask: str | None = None,
+         layer: str | None = None,
++        n_jobs: int | None = None,
+         fit_kwargs: Mapping = MappingProxyType({}),
+         test_kwargs: Mapping = MappingProxyType({}),
+     ) -> DataFrame:
+@@ -112,6 +193,9 @@ def compare_groups(
+             paired_by: Column in `adata.obs` to use for pairing. If None, an unpaired test is performed.
+             mask: Mask to apply to the data.
+             layer: Layer to use for the comparison.
++            n_jobs: Number of jobs to distribute the variables over, passed to `joblib.Parallel`.
++                None means one job, -1 all available cores.
++                `TTest` and `WilcoxonTest` test all variables at once and only use several jobs if the data does not fit into memory in one block.
+             fit_kwargs: Unused argument for compatibility with the `MethodBase` interface, do not specify.
+             test_kwargs: Additional kwargs passed to the test function.
+         """
+@@ -148,9 +232,9 @@ def _get_idx(column, value):
+         for group_to_compare in groups_to_compare:
+             comparison_idx = _get_idx(column, group_to_compare)
+             res_dfs.append(
+-                model._compare_single_group(baseline_idx, comparison_idx, paired=paired, **test_kwargs).assign(
+-                    comparison=f"{group_to_compare}_vs_{baseline if baseline is not None else 'rest'}"
+-                )
++                model._compare_single_group(
++                    baseline_idx, comparison_idx, paired=paired, n_jobs=n_jobs, **test_kwargs
++                ).assign(comparison=f"{group_to_compare}_vs_{baseline if baseline is not None else 'rest'}")
+             )
+         return fdr_correction(pd.concat(res_dfs))
+ 
+@@ -171,6 +255,20 @@ def _test(x0: np.ndarray, x1: np.ndarray, paired: bool, **kwargs) -> dict[str, f
+             "statistic": test_result.statistic,
+         }
+ 
++    @staticmethod
++    def _test_vectorized(x0: np.ndarray, x1: np.ndarray, paired: bool, **kwargs) -> dict[str, np.ndarray]:
++        """Perform an unpaired or paired Wilcoxon/Mann-Whitney-U test for each column of x0 and x1."""
++        test_result = (
++            scipy.stats.wilcoxon(x0, x1, axis=0, **kwargs)
++            if paired
++            else scipy.stats.mannwhitneyu(x0, x1, axis=0, **kwargs)
++        )
++
++        return {
++            "p_value": test_result.pvalue,
++            "statistic": test_result.statistic,
++        }
++
+ 
+ class TTest(SimpleComparisonBase):
+     """Perform a unpaired or paired T-test."""
+@@ -184,6 +282,20 @@ def _test(x0: np.ndarray, x1: np.ndarray, paired: bool, **kwargs) -> dict[str, f
+             "statistic": test_result.statistic,
+         }
+ 
++    @staticmethod
++    def _test_vectorized(x0: np.ndarray, x1: np.ndarray, paired: bool, **kwargs) -> dict[str, np.ndarray]:
++        """Perform an unpaired or paired T-test for each column of x0 and x1."""
++        test_result = (
++            scipy.stats.ttest_rel(x0, x1, axis=0, **kwargs)
++            if paired
++            else scipy.stats.ttest_ind(x0, x1, axis=0, **kwargs)
++        )
++
++        return {
++            "p_value": test_result.pvalue,
++            "statistic": test_result.statistic,
++        }
++
+ 
+ class PermutationTest(SimpleComparisonBase):
+     """Perform a permutation test.
+@@ -212,6 +324,7 @@ def compare_groups(
+         paired_by: str | None = None,
+         mask: str | None = None,
+         layer: str | None = None,
++        n_jobs: int | None = None,
+         n_permutations: int = 1000,
+         test_statistic: Callable[[np.ndarray, np.ndarray], float] = lambda x, y: (
+             np.log2(np.mean(y) + 1e-8) - np.log2(np.mean(x) + 1e-8)
+@@ -231,6 +344,9 @@ def compare_groups(
+                 If None, an unpaired test is performed.
+             mask: Mask to apply to the data.
+             layer: Layer to use for the comparison.
++            n_jobs: Number of jobs to distribute the variables over, passed to `joblib.Parallel`.
++                None means one job, -1 all available cores.
++                Permuting is expensive and each variable is permuted independently, so this is the method that benefits the most from several jobs.
+             n_permutations: Number of permutations to perform.
+             test_statistic: A callable that takes two arrays (x0, x1) and returns a float statistic.
+                 Defaults to log2 fold change with pseudocount: log2(mean(x1) + 1e-8) - log2(mean(x0) + 1e-8).
+@@ -240,6 +356,7 @@ def compare_groups(
+                 The permutation test function is `scipy.stats.permutation_test`.
+                 We refer to its documentation for available options.
+                 Note that `test_statistic` and `n_permutations` are set by this function and should not be provided here.
++                Passing `rng` makes the result reproducible and independent of `n_jobs`, since each variable is tested with its own stream derived from it.
+ 
+         Examples:
+             >>> # Difference in means (log fold change)
+@@ -264,6 +381,7 @@ def compare_groups(
+             paired_by=paired_by,
+             mask=mask,
+             layer=layer,
++            n_jobs=n_jobs,
+             fit_kwargs=fit_kwargs,
+             test_kwargs=enhanced_test_kwargs,
+         )
+diff --git a/pertpy/tools/_differential_gene_expression/_statsmodels.py b/pertpy/tools/_differential_gene_expression/_statsmodels.py
+index b89d31a5..f7d85757 100644
+--- a/pertpy/tools/_differential_gene_expression/_statsmodels.py
++++ b/pertpy/tools/_differential_gene_expression/_statsmodels.py
+@@ -1,14 +1,23 @@
+ import numpy as np
+ import pandas as pd
+-import scanpy as sc
+ import statsmodels
+ import statsmodels.api as sm
++from fast_array_utils.conv import to_dense
++from joblib import delayed, effective_n_jobs
++from scipy.sparse import issparse
+ from tqdm.auto import tqdm
+ 
++from pertpy._parallel import _MAX_BLOCK_ELEMENTS, _block_slices, _parallelize_with_joblib
++
+ from ._base import LinearModelBase
+ from ._checks import check_is_numeric_matrix
+ 
+ 
++def _fit_block(regression_model, endog_block: np.ndarray, exog, kwargs: dict) -> list:
++    """Fit one model per column of `endog_block`."""
++    return [regression_model(endog_block[:, i], exog, **kwargs).fit() for i in range(endog_block.shape[1])]
++
++
+ class Statsmodels(LinearModelBase):
+     """Differential expression test using a statsmodels linear regression."""
+ 
+@@ -18,12 +27,16 @@ def _check_counts(self):
+     def fit(
+         self,
+         regression_model: type[sm.OLS] | type[sm.GLM] = sm.OLS,
++        *,
++        n_jobs: int | None = None,
+         **kwargs,
+     ) -> None:
+         """Fit the specified regression model.
+ 
+         Args:
+             regression_model: A statsmodels regression model class, either OLS or GLM.
++            n_jobs: Number of jobs to distribute the variables over, passed to `joblib.Parallel`.
++                None means one job, -1 all available cores.
+             **kwargs: Additional arguments for fitting the specific method. In particular, this
+                 is where you can specify the family for GLM.
+ 
+@@ -34,15 +47,30 @@ def fit(
+             >>> model.fit(sm.GLM, family=sm.families.NegativeBinomial(link=sm.families.links.Log()))
+             >>> results = model.test_contrasts(np.array([0, 1]))
+         """
+-        self.models = []
+-        for var in tqdm(self.adata.var_names):
+-            mod = regression_model(
+-                sc.get.obs_df(self.adata, keys=[var], layer=self.layer)[var],
+-                self.design,
+-                **kwargs,
++        data = self.data
++        # Slicing out variables is significantly more efficient in csc format.
++        if issparse(data):
++            data = data.tocsc()
++
++        n_workers = effective_n_jobs(n_jobs)
++        blocks = _block_slices(
++            self.adata.n_vars,
++            # Across processes, larger blocks amortize sending the design matrix.
++            n_blocks=self.adata.n_vars if n_workers == 1 else 4 * n_workers,
++            max_block_size=_MAX_BLOCK_ELEMENTS // max(self.adata.n_obs, 1),
++        )
++        self.models = [
++            model
++            for block_models in _parallelize_with_joblib(
++                (
++                    delayed(_fit_block)(regression_model, to_dense(data[:, block]), self.design, dict(kwargs))
++                    for block in blocks
++                ),
++                total=len(blocks),
++                n_jobs=n_jobs,
+             )
+-            mod = mod.fit()
+-            self.models.append(mod)
++            for model in block_models
++        ]
+ 
+     def _test_single_contrast(self, contrast, **kwargs) -> pd.DataFrame:
+         res = []

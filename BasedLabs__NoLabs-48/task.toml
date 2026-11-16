@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/BasedLabs__NoLabs-48"
+description = "fix: error types on frontend"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "NoLabs",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "BasedLabs/NoLabs"
+ref = "a640e33a82e7810578fb36355f57f411d0f28e11"
+reference = "https://github.com/BasedLabs/NoLabs/pull/48"
+source_access = "auto"
+built_at = "2026-11-16T03:18:59.222592+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:88f0b4677da1fb1d77601bbeb3a973234f8be2f01ff63f9ae107c73512f29ca9"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2024-04-13T19:55:38Z"
+diff_format = "unified"
+context_files = [
+    "frontend/src/api/errorTypes.ts",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 20
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

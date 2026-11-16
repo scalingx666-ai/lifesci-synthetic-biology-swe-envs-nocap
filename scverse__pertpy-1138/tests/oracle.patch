@@ -1,0 +1,258 @@
+diff --git a/src/pertpy/tools/_coda/_base_coda.py b/src/pertpy/tools/_coda/_base_coda.py
+index 75d07b9c..dc27ce36 100644
+--- a/src/pertpy/tools/_coda/_base_coda.py
++++ b/src/pertpy/tools/_coda/_base_coda.py
+@@ -135,7 +135,7 @@ def _build_arviz_from_adata(
+         num_chains = int(mcmc_state.get("num_chains", 1)) or 1
+ 
+         predict_kwargs = {
+-            "counts": None,
++            "counts": jnp.array(sample_adata.X, dtype="float64"),
+             "covariates": jnp.array(sample_adata.obsm["covariate_matrix"], dtype="float64"),
+             "n_total": jnp.rint(jnp.array(sample_adata.obsm["sample_counts"], dtype="float64")),
+             "ref_index": jnp.array(sample_adata.uns["scCODA_params"]["reference_index"]),
+@@ -146,11 +146,9 @@ def _build_arviz_from_adata(
+         def _grouped(d: dict, chains: int, *, predictive: bool = False) -> dict:
+             out = {}
+             for k, v in d.items():
++                if predictive and k == "counts":
++                    continue
+                 arr = np.asarray(v)
+-                # Drop variables whose rank past the sample axis doesn't match `dims[k]`,
+-                # e.g. `counts` from `Predictive` carries an extra batch axis under
+-                # numpyro's DirichletMultinomial broadcasting and would otherwise
+-                # collide with the cell_type coord.
+                 if predictive and len(arr.shape) - 1 != len(dims.get(k, [])):
+                     continue
+                 out[k] = arr.reshape((chains, -1, *arr.shape[1:]))
+diff --git a/src/pertpy/tools/_scgen/_scgen.py b/src/pertpy/tools/_scgen/_scgen.py
+index a8de31e5..cf7d813a 100644
+--- a/src/pertpy/tools/_scgen/_scgen.py
++++ b/src/pertpy/tools/_scgen/_scgen.py
+@@ -374,21 +374,21 @@ def predict(
+         # use keys registered from `setup_anndata()`
+         cell_type_key = self.labels_key
+         condition_key = self.batch_key
++        obs = cast_frame(self.adata.obs)
+ 
+         if restrict_arithmetic_to == "all":
+-            ctrl_x = self.adata[self.adata.obs[condition_key] == ctrl_key, :]
+-            stim_x = self.adata[self.adata.obs[condition_key] == stim_key, :]
+-            ctrl_x = balancer(ctrl_x, cell_type_key)
+-            stim_x = balancer(stim_x, cell_type_key)
++            subset = np.ones(self.adata.n_obs, dtype=bool)
++            balance = True
+         else:
+             key = list(restrict_arithmetic_to.keys())[0]
+             values = restrict_arithmetic_to[key]
+-            subset = self.adata[self.adata.obs[key].isin(values)]
+-            ctrl_x = subset[subset.obs[condition_key] == ctrl_key, :]
+-            stim_x = subset[subset.obs[condition_key] == stim_key, :]
+-            if len(values) > 1:
+-                ctrl_x = balancer(ctrl_x, cell_type_key)
+-                stim_x = balancer(stim_x, cell_type_key)
++            subset = obs[key].isin(values).to_numpy()
++            balance = len(values) > 1
++        ctrl_idx = np.flatnonzero(subset & (obs[condition_key] == ctrl_key).to_numpy())
++        stim_idx = np.flatnonzero(subset & (obs[condition_key] == stim_key).to_numpy())
++        if balance:
++            ctrl_idx = ctrl_idx[balancer(obs[cell_type_key].iloc[ctrl_idx])]
++            stim_idx = stim_idx[balancer(obs[cell_type_key].iloc[stim_idx])]
+         if celltype_to_predict is not None and adata_to_predict is not None:
+             raise Exception("Please provide either a cell type or adata not both!")
+         if celltype_to_predict is None and adata_to_predict is None:
+@@ -405,15 +405,13 @@ def predict(
+         else:
+             ctrl_pred = adata_to_predict
+ 
+-        eq = min(ctrl_x.X.shape[0], stim_x.X.shape[0])
++        eq = min(len(ctrl_idx), len(stim_idx))
+         rng = np.random.default_rng()
+-        cd_ind = rng.choice(range(ctrl_x.shape[0]), size=eq, replace=False)
+-        stim_ind = rng.choice(range(stim_x.shape[0]), size=eq, replace=False)
+-        ctrl_adata = ctrl_x[cd_ind, :]
+-        stim_adata = stim_x[stim_ind, :]
++        cd_ind = rng.choice(range(len(ctrl_idx)), size=eq, replace=False)
++        stim_ind = rng.choice(range(len(stim_idx)), size=eq, replace=False)
+ 
+-        latent_ctrl = self._avg_vector(ctrl_adata)
+-        latent_stim = self._avg_vector(stim_adata)
++        latent_ctrl = self._avg_vector(self.adata[ctrl_idx[cd_ind]])
++        latent_stim = self._avg_vector(self.adata[stim_idx[stim_ind]])
+ 
+         delta = latent_stim - latent_ctrl
+ 
+diff --git a/src/pertpy/tools/_scgen/_train.py b/src/pertpy/tools/_scgen/_train.py
+index 20f4b186..b52ea1b4 100644
+--- a/src/pertpy/tools/_scgen/_train.py
++++ b/src/pertpy/tools/_scgen/_train.py
+@@ -11,6 +11,8 @@
+ from flax.training import train_state
+ 
+ if TYPE_CHECKING:
++    from collections.abc import Sequence
++
+     from ._scgenvae import JaxSCGENVAE
+ 
+ DEFAULT_LR = 1e-3
+@@ -70,25 +72,37 @@ def _batches(indices: np.ndarray, batch_size: int, rng: np.random.Generator | No
+     return [order[i : i + batch_size] for i in range(0, len(order), batch_size)]
+ 
+ 
++def _mean_loss(losses: Sequence[jax.Array], sizes: Sequence[int]) -> float:
++    total = 0.0
++    for loss, size in zip(jax.device_get(losses), sizes, strict=True):
++        total += float(loss) * size
++    return total / sum(sizes)
++
++
+ @jax.jit
+-def _train_step(state: TrainStateWithState, x: jnp.ndarray, rngs: dict[str, jnp.ndarray]):
++def _train_step(state: TrainStateWithState, x: jnp.ndarray, key: jnp.ndarray):
++    key, dropout_key, z_key = jax.random.split(key, 3)
++
+     def loss_fn(params):
+         variables = {"params": params, **state.state}
+-        outputs, new_model_state = state.apply_fn(variables, x, rngs=rngs, mutable=list(state.state.keys()))
++        outputs, new_model_state = state.apply_fn(
++            variables, x, rngs={"dropout": dropout_key, "z": z_key}, mutable=list(state.state.keys())
++        )
+         loss_output = outputs[2]
+         return loss_output.loss, (loss_output, new_model_state)
+ 
+     (_loss, (loss_output, new_model_state)), grads = jax.value_and_grad(loss_fn, has_aux=True)(state.params)
+     new_state = state.apply_gradients(grads=grads, state=new_model_state)
+-    return new_state, loss_output.loss
++    return new_state, loss_output.loss, key
+ 
+ 
+ def _make_eval_step(eval_apply_fn):
+     @jax.jit
+-    def _eval_step(params, model_state, x: jnp.ndarray, rngs: dict[str, jnp.ndarray]):
++    def _eval_step(params, model_state, x: jnp.ndarray, key: jnp.ndarray):
++        key, z_key = jax.random.split(key)
+         variables = {"params": params, **model_state}
+-        outputs = eval_apply_fn(variables, x, rngs=rngs)
+-        return outputs[2].loss
++        outputs = eval_apply_fn(variables, x, rngs={"z": z_key})
++        return outputs[2].loss, key
+ 
+     return _eval_step
+ 
+@@ -131,7 +145,7 @@ def train_module(
+ 
+     key = jax.random.PRNGKey(seed)
+     key, *init_keys = jax.random.split(key, len(module.required_rngs) + 1)
+-    variables = module.init(dict(zip(module.required_rngs, init_keys, strict=True)), jnp.asarray(x[:1]))
++    variables = jax.jit(module.init)(dict(zip(module.required_rngs, init_keys, strict=True)), jnp.asarray(x[:1]))
+     params = variables["params"]
+     model_state = {k: v for k, v in variables.items() if k != "params"}
+ 
+@@ -150,24 +164,22 @@ def train_module(
+     best_loss = np.inf
+     epochs_without_improvement = 0
+     for _epoch in range(max_epochs):
+-        epoch_loss, epoch_cells = 0.0, 0
++        losses, sizes = [], []
+         for batch_idx in _batches(train_idx, batch_size, np_rng):
+-            key, dropout_key, z_key = jax.random.split(key, 3)
+-            state, loss = _train_step(state, jnp.asarray(x[batch_idx]), {"dropout": dropout_key, "z": z_key})
+-            epoch_loss += float(loss) * len(batch_idx)
+-            epoch_cells += len(batch_idx)
+-        history["train_loss"].append(epoch_loss / epoch_cells)
++            state, loss, key = _train_step(state, jnp.asarray(x[batch_idx]), key)
++            losses.append(loss)
++            sizes.append(len(batch_idx))
++        history["train_loss"].append(_mean_loss(losses, sizes))
+ 
+         if len(val_idx) == 0:
+             continue
+ 
+-        val_loss, val_cells = 0.0, 0
++        losses, sizes = [], []
+         for batch_idx in _batches(val_idx, batch_size, None):
+-            key, z_key = jax.random.split(key)
+-            loss = eval_step(state.params, state.state, jnp.asarray(x[batch_idx]), {"z": z_key})
+-            val_loss += float(loss) * len(batch_idx)
+-            val_cells += len(batch_idx)
+-        val_loss /= val_cells
++            loss, key = eval_step(state.params, state.state, jnp.asarray(x[batch_idx]), key)
++            losses.append(loss)
++            sizes.append(len(batch_idx))
++        val_loss = _mean_loss(losses, sizes)
+         history["validation_loss"].append(val_loss)
+ 
+         if early_stopping:
+diff --git a/src/pertpy/tools/_scgen/_utils.py b/src/pertpy/tools/_scgen/_utils.py
+index 7d60ada7..f942f90f 100644
+--- a/src/pertpy/tools/_scgen/_utils.py
++++ b/src/pertpy/tools/_scgen/_utils.py
+@@ -1,8 +1,12 @@
+ from __future__ import annotations
+ 
+-import anndata as ad
++from typing import TYPE_CHECKING
++
+ import numpy as np
+ 
++if TYPE_CHECKING:
++    import pandas as pd
++
+ 
+ def extractor(
+     data,
+@@ -51,44 +55,22 @@ def extractor(
+     return [training, condition_1, condition_2, cell_with_both_condition]
+ 
+ 
+-def balancer(
+-    adata,
+-    cell_type_key,
+-):
+-    """Makes cell type populations equal.
++def balancer(labels: pd.Series) -> np.ndarray:
++    """Upsamples every cell type to the size of the largest one.
+ 
+     Args:
+-        adata: `~anndata.AnnData` Annotated data matrix.
+-        cell_type_key: key for `.obs` of `data` where cell types can be found.
++        labels: Cell type of every cell.
+ 
+     Returns:
+-        Equal cell type population Annotated data matrix.
+-
+-    Example:
+-        .. code-block:: python
+-
+-            import Scgen
+-            import anndata
+-
+-            train_data = anndata.read("./train_kang.h5ad")
+-            train_ctrl = train_data[train_data.obs["condition"] == "control", :]
+-            train_ctrl = balancer(train_ctrl, "conditions", "cell_type")
++        Positional indices into ``labels`` with equally many cells per cell type.
+     """
+-    class_names = np.unique(adata.obs[cell_type_key])
+-    class_pop = {}
+-    for cls in class_names:
+-        class_pop[cls] = adata[adata.obs[cell_type_key] == cls].shape[0]
+-    max_number = np.max(list(class_pop.values()))
++    labels_arr = np.asarray(labels)
++    class_names, class_pop = np.unique(labels_arr, return_counts=True)
++    max_number = class_pop.max()
+     index_all = []
+     for cls in class_names:
+-        class_index = np.array(adata.obs[cell_type_key] == cls)
+-        index_cls = np.nonzero(class_index)[0]
++        index_cls = np.flatnonzero(labels_arr == cls)
+         rng = np.random.default_rng()
+-        index_cls_r = index_cls[rng.choice(len(index_cls), max_number)]
+-        index_all.append(index_cls_r)
+-
+-    indices = np.concatenate(index_all)
+-    balanced_data = ad.concat([adata[indices]])
+-    balanced_data.obs_names = adata.obs_names[indices] + "-" + np.arange(len(indices)).astype(str)
++        index_all.append(index_cls[rng.choice(len(index_cls), max_number)])
+ 
+-    return balanced_data
++    return np.concatenate(index_all)

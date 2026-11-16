@@ -1,0 +1,13 @@
+diff --git a/src/pertpy/tools/_perturbation_efficacy/_mixscape.py b/src/pertpy/tools/_perturbation_efficacy/_mixscape.py
+index f963ce0b..359c7d04 100644
+--- a/src/pertpy/tools/_perturbation_efficacy/_mixscape.py
++++ b/src/pertpy/tools/_perturbation_efficacy/_mixscape.py
+@@ -179,7 +179,7 @@ def mixscape(
+                     de_genes = perturbation_markers[(category, gene)]
+                     de_genes_indices = np.where(np.isin(adata.var_names, list(de_genes)))[0]
+ 
+-                    dat = to_dense(_subset_rows_cols(cast_matrix(X), all_rows, de_genes_indices))
++                    dat = to_dense(_subset_rows_cols(cast_matrix(X), all_rows, de_genes_indices)).astype(np.float64)
+                     if scale:
+                         dat = sc.pp.scale(dat)
+ 

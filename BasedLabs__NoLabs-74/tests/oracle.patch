@@ -1,0 +1,150 @@
+diff --git a/compose.yaml b/compose.yaml
+index 51997d35..514d5271 100644
+--- a/compose.yaml
++++ b/compose.yaml
+@@ -122,7 +122,7 @@ services:
+       dockerfile: build/Dockerfile
+     command: --host=0.0.0.0 --port=5734
+   external_data_query:
+-    image: 'ghcr.io/basedlabs/external-data-query:1.0.1'
++    image: 'ghcr.io/basedlabs/external-data-query:1.0.2'
+     network_mode: host
+     build:
+       context: microservices/external_data_query
+@@ -157,7 +157,7 @@ services:
+       dockerfile: build/Dockerfile
+     command: --host=0.0.0.0 --port=5790 --workers=1
+   nolabs:
+-    image: 'ghcr.io/basedlabs/nolabs:2.0.1'
++    image: 'ghcr.io/basedlabs/nolabs:2.0.2'
+     network_mode: host
+     build:
+       context: .
+diff --git a/frontend/src/features/workflow/components/nodeTemplates/dataSourceNodes/ligands/LigandsList.vue b/frontend/src/features/workflow/components/nodeTemplates/dataSourceNodes/ligands/LigandsList.vue
+index faf9e978..ef15d2a0 100644
+--- a/frontend/src/features/workflow/components/nodeTemplates/dataSourceNodes/ligands/LigandsList.vue
++++ b/frontend/src/features/workflow/components/nodeTemplates/dataSourceNodes/ligands/LigandsList.vue
+@@ -21,8 +21,8 @@
+                 <div class="col-8">
+                   <q-card-section>
+                     <div>{{ ligand.name }}</div>
+-                    <q-item-label v-if="ligand.smiles_content" caption>SMILES: {{
+-                      ligand.smiles_content
++                    <q-item-label v-if="ligand.smiles_content" class="smiles-content" caption>SMILES: {{
++                      formatSmiles(ligand.smiles_content)
+                     }}
+                     </q-item-label>
+                   </q-card-section>
+@@ -60,7 +60,7 @@
+   <q-dialog v-model="ligandDetailDialogVisible">
+     <q-card>
+       <q-card-section>
+-        <LigandDetail :ligandId="selectedLigand.id" v-if="selectedLigand && selectedLigand.sdf_content">
++        <LigandDetail :ligandId="selectedLigand.id">
+         </LigandDetail>
+       </q-card-section>
+       <q-card-actions align="right">
+@@ -217,6 +217,9 @@ export default defineComponent({
+         const scrollContent = this.$refs.scrollContent as HTMLElement;
+         this.scrollContentWidth = scrollContent ? scrollContent.scrollWidth : 0;
+       });
++    },
++    formatSmiles(smiles: string): string {
++      return smiles.replace(/(.{20})/g, "$1\n");
+     }
+   },
+   unmounted() {
+@@ -240,4 +243,10 @@ export default defineComponent({
+ .q-list {
+   overflow-x: auto;
+ }
++
++.smiles-content {
++  display: inline-block;
++  white-space: pre-wrap; /* Allow breaking within the SMILES string */
++  word-break: break-all; /* Break long words */
++}
+ </style>
+diff --git a/frontend/src/features/workflow/components/nodeTemplates/dataSourceNodes/proteins/ProteinDetail.vue b/frontend/src/features/workflow/components/nodeTemplates/dataSourceNodes/proteins/ProteinDetail.vue
+index d87f79f6..64b5e3c1 100644
+--- a/frontend/src/features/workflow/components/nodeTemplates/dataSourceNodes/proteins/ProteinDetail.vue
++++ b/frontend/src/features/workflow/components/nodeTemplates/dataSourceNodes/proteins/ProteinDetail.vue
+@@ -30,9 +30,6 @@
+           </div>
+         </div>
+       </q-card-section>
+-      <q-card-section v-if="protein.data.link">
+-        <q-btn flat color="primary" :href="protein.data.link" target="_blank">View More Info</q-btn>
+-      </q-card-section>
+       <PdbViewer v-if="hasPdb && pdbFile" :pdb-file="pdbFile" :key="pdbFile.size" />
+     </q-card-section>
+   </q-card>
+@@ -136,7 +133,7 @@ export default defineComponent({
+   },
+   computed: {
+     hasPdb() {
+-      return this.protein.data.pdbContent != null;
++      return this.protein.data.pdbContent != null && this.protein.data.pdbContent != "";
+     },
+     workflowStore() {
+       return useWorkflowStore();
+diff --git a/microservices/external_data_query/external_data_query/chembl/api_models.py b/microservices/external_data_query/external_data_query/chembl/api_models.py
+index ec47e0ba..799e8722 100644
+--- a/microservices/external_data_query/external_data_query/chembl/api_models.py
++++ b/microservices/external_data_query/external_data_query/chembl/api_models.py
+@@ -9,10 +9,10 @@
+ @dataclass
+ class Molecule:
+     chembl_id: str
+-    molecule_type: str
+     synonyms: List[str]
+     smiles: str
+     link: str
++    molecule_type: str | None = None
+     pref_name: str = None
+ 
+ 
+diff --git a/microservices/external_data_query/external_data_query/chembl/services.py b/microservices/external_data_query/external_data_query/chembl/services.py
+index b0df7aa4..fc7c0614 100644
+--- a/microservices/external_data_query/external_data_query/chembl/services.py
++++ b/microservices/external_data_query/external_data_query/chembl/services.py
+@@ -1,5 +1,3 @@
+-import json
+-
+ import requests
+ 
+ from external_data_query.chembl.api_models import ChEMBLMoleculeRequest, ChEMBLMoleculeResponse, Molecule, DrugIndicationRequest, \
+@@ -35,9 +33,10 @@ def search_chembl_molecules(request: ChEMBLMoleculeRequest) -> ChEMBLMoleculeRes
+     if response.status_code == 200:
+         try:
+             data = response.json()
+-            print(data)
++            print("DATA: ", data)
+             for entry in data['molecules']:
+                 chembl_id = entry.get('molecule_chembl_id')
++                print("CHEMBL_ID: ", chembl_id)
+                 molecule = fetch_molecule_details(chembl_id)
+                 if molecule:
+                     molecules.append(molecule)
+@@ -98,6 +97,8 @@ def fetch_molecule_details(chembl_id: str) -> Molecule | None:
+ 
+         molecule_link = f"https://www.ebi.ac.uk/chembl/compound_report_card/{chembl_id}/"
+ 
++        print(molecule_type, pref_name, synonym_names, smiles, molecule_link)
++
+         if smiles != 'N/A':
+             return Molecule(chembl_id=chembl_id, molecule_type=molecule_type, pref_name=pref_name,
+                             synonyms=synonym_names, smiles=smiles, link=molecule_link)
+diff --git a/nolabs/application/use_cases/biobuddy/functions/query_chembl.py b/nolabs/application/use_cases/biobuddy/functions/query_chembl.py
+index 4cee8bbd..4986155b 100644
+--- a/nolabs/application/use_cases/biobuddy/functions/query_chembl.py
++++ b/nolabs/application/use_cases/biobuddy/functions/query_chembl.py
+@@ -89,7 +89,7 @@ def __init__(self, chembl_microservice: external_data_query_microservice.Default
+                                                     "how many, set it to 20.")
+         ]
+         self._chembl_microservice = chembl_microservice
+-        super().__init__("query_chembl", "Query Chembl database by search term to find the molecule",
++        super().__init__("query_chembl", "Query Chembl database to find the molecules of interest. If asked for specific molecule, will return the single molecule like nicotine or aspirin.",
+                          parameters)
+ 
+     def execute(self, arguments: Dict[str, Any]) -> FunctionCall:

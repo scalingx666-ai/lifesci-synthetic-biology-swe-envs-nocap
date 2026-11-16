@@ -1,0 +1,13 @@
+diff --git a/src/pertpy/tools/_distances/_distances.py b/src/pertpy/tools/_distances/_distances.py
+index 82265337..2d994b3c 100644
+--- a/src/pertpy/tools/_distances/_distances.py
++++ b/src/pertpy/tools/_distances/_distances.py
+@@ -873,7 +873,7 @@ def _bootstrap_mode(self, X, Y, n_bootstraps=100, random_state=0, **kwargs) -> M
+         distances = []
+         for _ in range(n_bootstraps):
+             X_bootstrapped = X[rng.choice(a=X.shape[0], size=X.shape[0], replace=True)]
+-            Y_bootstrapped = Y[rng.choice(a=Y.shape[0], size=X.shape[0], replace=True)]
++            Y_bootstrapped = Y[rng.choice(a=Y.shape[0], size=Y.shape[0], replace=True)]
+ 
+             distance = self(X_bootstrapped, Y_bootstrapped, **kwargs)
+             distances.append(distance)

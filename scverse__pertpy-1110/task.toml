@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1110"
+description = "Make the pydeseq2 Milo solver reproduce R Milo"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "c7e0f024c92a07813d1c39a00789b4874d949e29"
+reference = "https://github.com/scverse/pertpy/pull/1110"
+source_access = "auto"
+built_at = "2026-11-15T16:40:17.709888+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:f2426036b8438413125234d583edbf65ff44c4a03e020ee72e8de215ac461407"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-09-23T13:08:19Z"
+diff_format = "unified"
+context_files = [
+    "src/pertpy/tools/_milo.py",
+    "src/pertpy/tools/_milo_glmm.py",
+    "tests/tools/test_milo.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 189
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

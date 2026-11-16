@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-997"
+description = "[pre-commit.ci] pre-commit autoupdate"
+
+[metadata]
+difficulty = "easy"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "f9a36ceb8d2ac94c5ffef949b1f152146f11d45d"
+reference = "https://github.com/scverse/pertpy/pull/997"
+source_access = "auto"
+built_at = "2026-11-15T16:43:00.213015+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:61620c37ff4312608aa8686a4a34a395b45215daf93b551c9c830dcc5849269a"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-25T18:35:45Z"
+diff_format = "unified"
+context_files = [
+    ".pre-commit-config.yaml",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 2
+difficulty = "trivial"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

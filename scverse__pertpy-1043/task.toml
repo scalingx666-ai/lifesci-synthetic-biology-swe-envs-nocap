@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1043"
+description = "Speed up Augur predict"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "bc16ed6c95618ff19ca5cd8f58f8ce614f4fb47e"
+reference = "https://github.com/scverse/pertpy/pull/1043"
+source_access = "auto"
+built_at = "2026-11-15T16:42:05.725755+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:119d9e9c5a6d7c318f0fbf58a279e55632f04597b883d20c75cdd8411ca9ba8c"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-07-13T21:38:27Z"
+diff_format = "unified"
+context_files = [
+    "pertpy/tools/_augur.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 103
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

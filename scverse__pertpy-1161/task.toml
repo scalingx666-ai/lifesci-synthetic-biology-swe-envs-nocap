@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1161"
+description = "Stop rendering scCODA trees inline after saving"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "72498c050719f2a2f5de266e03e5200a7c0de63e"
+reference = "https://github.com/scverse/pertpy/pull/1161"
+source_access = "auto"
+built_at = "2026-11-15T16:38:11.508283+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:1aad357b2be941e2217311750a6e321f3e9fe711d5f5a07f18d44172832aa2ed"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-10-02T10:59:21Z"
+diff_format = "unified"
+context_files = [
+    "src/pertpy/tools/_coda/_base_coda.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 13
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

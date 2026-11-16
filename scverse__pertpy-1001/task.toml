@@ -1,0 +1,67 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1001"
+description = "add MiloDE"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "f52cb9996637bce2fd1ae3234af17b29cb8fe167"
+reference = "https://github.com/scverse/pertpy/pull/1001"
+source_access = "auto"
+built_at = "2026-11-15T16:42:55.764243+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:293fb795a690a922a978fe1ef4ebb2d92c6488346f3d8156afdc2e20b40957e7"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-28T08:41:03Z"
+diff_format = "unified"
+context_files = [
+    "docs/_static/docstring_previews/milo_de_nhoods.png",
+    "docs/_static/docstring_previews/milo_de_nhoods_nhood_graph.png",
+    "docs/_static/docstring_previews/milo_de_nhoods_volcano.png",
+    "docs/tutorials/notebooks",
+    "pertpy/tools/_milo.py",
+    "tests/tools/test_milo.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 533
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

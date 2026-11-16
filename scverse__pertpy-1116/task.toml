@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1116"
+description = "Remove type ignores made unused by numba 0.68"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "2adb03da23ee61b45949dbaf1a2462a299b1451a"
+reference = "https://github.com/scverse/pertpy/pull/1116"
+source_access = "auto"
+built_at = "2026-11-15T16:40:03.303880+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:109aa3385a43570c6ac43a320043e21731d0ee155db4abbcc67772847079f943"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-10-01T10:56:16Z"
+diff_format = "unified"
+context_files = [
+    "src/pertpy/preprocessing/_guide_rna.py",
+    "src/pertpy/tools/_distances/_distances.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 6
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

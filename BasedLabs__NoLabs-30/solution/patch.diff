@@ -1,0 +1,1148 @@
+diff --git a/frontend/src/features/drug_discovery/ExperimentNavigation.vue b/frontend/src/features/drug_discovery/ExperimentNavigation.vue
+index 3c89c6b8..12a89c1e 100644
+--- a/frontend/src/features/drug_discovery/ExperimentNavigation.vue
++++ b/frontend/src/features/drug_discovery/ExperimentNavigation.vue
+@@ -53,23 +53,27 @@
+   </q-page>
+ </template>
+ 
+-<script>
++<script lang="ts">
+ import ExperimentHeader from "src/features/drug_discovery/components/ExperimentHeader.vue";
+ import {useDrugDiscoveryStore} from "./storage";
++import {defineComponent} from "vue";
+ 
+-export default {
++export default defineComponent({
+   name: "ExperimentNavigation",
+   components: {ExperimentHeader},
+   data() {
+     return {
+       step: 1, // This can be a reactive property based on the current route if needed
+-      experiment: {},
++      experiment: {
++        experimentId: null as string | null,
++        metadata: null
++      },
+     };
+   },
+   async mounted() {
+     const store = useDrugDiscoveryStore();
+     this.setStepBasedOnRoute();
+-    this.experiment.experimentId = this.$route.params.experimentId;
++    this.experiment.experimentId = this.$route.params.experimentId as string;
+     this.experiment.metadata = await store.getExperimentMetaData(this.experiment.experimentId);
+   },
+   methods: {
+@@ -88,19 +92,19 @@ export default {
+           this.step = 1; // Default step if the route name doesn't match
+       }
+     },
+-    openNextStep(stepName) {
++    openNextStep(stepName: string) {
+       this.$refs.stepper.next();
+       this.$router.push({ name: stepName, params: { experimentId: this.$route.params.experimentId } });
+     },
+-    openPreviousStep(stepName) {
++    openPreviousStep(stepName: string) {
+       this.$refs.stepper.previous();
+       this.$router.push({ name: stepName, params: { experimentId: this.$route.params.experimentId } });
+     },
+-    async onExperimentNameChange(newExperimentName) {
++    async onExperimentNameChange(newExperimentName: string) {
+       const store = useDrugDiscoveryStore();
+-      await store.changeExperimentName(this.experiment.experimentId, newExperimentName);
+-      this.experiment.name = newExperimentName;
++      await store.changeExperimentName(this.experiment.experimentId as string, newExperimentName);
+     }
+   }
+-};
++}
++)
+ </script>
+diff --git a/frontend/src/features/drug_discovery/components/RunDockingStep.vue b/frontend/src/features/drug_discovery/components/RunDockingStep.vue
+index a3456266..9193c1ca 100644
+--- a/frontend/src/features/drug_discovery/components/RunDockingStep.vue
++++ b/frontend/src/features/drug_discovery/components/RunDockingStep.vue
+@@ -150,18 +150,61 @@
+     </q-table>
+ </template>
+ 
+-<script>
+-import { useDrugDiscoveryStore } from 'src/features/drug_discovery/storage';
++<script lang="ts">
++import {useDrugDiscoveryStore} from 'src/features/drug_discovery/storage';
+ import {useRoute} from "vue-router";
+ import PdbViewer from "src/components/PdbViewer.vue";
+-
+-export default {
++import {ResultMetaData} from "src/api/client/models/ResultMetaData.ts";
++import {defineComponent} from "vue";
++
++interface Job {
++  job_id: string;
++  target_name: string | undefined;
++  ligand_name: string | undefined;
++  target_id: string;
++  ligand_id: string;
++  progress?: number;
++  isRunning?: boolean;
++  msaAvailable?: boolean;
++  pocketAvailable?: boolean;
++  foldingAvailable?: boolean;
++  dockingAvailable?: boolean;
++  msaRunning?: boolean;
++  pocketRunning?: boolean;
++  foldingRunning?: boolean;
++  dockingRunning?: boolean;
++  pocketIds: number[] | null;
++  isAnyJobRunning: boolean;
++  [key: string]: any; // Add this line to allow dynamic keys
++}
++
++interface ResultData {
++  predicted_pdb?: string;
++  predicted_sdf?: string;
++  predicted_pdb_file?: File;
++  predicted_sdf_file?: File;
++}
++
++interface DockingResult {
++  target_name: string | undefined;
++  ligand_name: string | undefined;
++  resultData?: ResultData | null;
++  pocketIds: number[] | null;
++  experiment_id: string;
++  job_id: string;
++  target_id: string;
++  ligand_id: string;
++  expanded: boolean;
++}
++
++export default defineComponent({
+   name: 'RunDocking',
+   components: {PdbViewer},
+   data() {
+     return {
+-      dockingResults: [],
+-      jobsInQueue: [],
++      experimentId: null as string | null,
++      dockingResults: [] as DockingResult[],
++      jobsInQueue: [] as Job[],
+       resultsColumns: [
+         { name: 'job_id', label: 'Job ID', field: 'job_id', align: 'left' },
+         { name: 'target_name', label: 'Target Name', field: 'target_name', align: 'left' },
+@@ -175,7 +218,7 @@ export default {
+         { name: 'progress', label: 'Progress', field: 'progress', align: 'left', sortable: true },
+         { name: 'delete', label: 'Delete', field: 'delete', align: 'center' },
+       ],
+-      currentJob: null,
++      currentJob: null as Job | null,
+       steps: [
+         { key: 'msa', label: 'Step 1. MSA' },
+         { key: 'pocket', label: 'Step 2. Binding Pocket' },
+@@ -186,6 +229,7 @@ export default {
+       p2RankServiceHealthy: true,
+       foldingServiceHealthy: true,
+       umolServiceHealthy: true,
++      polling: null as number | null,
+     };
+   },
+   methods: {
+@@ -196,12 +240,12 @@ export default {
+       const foldingServiceHealthyResponse = await store.checkFoldingServiceHealth();
+       const umolServiceHealthyResponse = await store.checkUmolServiceHealth();
+ 
+-      this.msaServiceHealthy = msaServiceHealthyResponse.is_healthy;
+-      this.p2RankServiceHealthy = p2RankServiceHealthyResponse.is_healthy;
+-      this.foldingServiceHealthy = foldingServiceHealthyResponse.is_healthy;
+-      this.umolServiceHealthy = umolServiceHealthyResponse.is_healthy;
++      this.msaServiceHealthy = msaServiceHealthyResponse?.is_healthy ?? false;
++      this.p2RankServiceHealthy = p2RankServiceHealthyResponse?.is_healthy ?? false;
++      this.foldingServiceHealthy = foldingServiceHealthyResponse?.is_healthy ?? false;
++      this.umolServiceHealthy = umolServiceHealthyResponse?.is_healthy ?? false;
+     },
+-    getServiceHealth(key) {
++    getServiceHealth(key: string) {
+       switch (key) {
+         case 'msa':
+           return this.msaServiceHealthy;
+@@ -216,37 +260,42 @@ export default {
+       }
+     },
+     async fetchDockingResults() {
++      // experimentId is definitely not null here so can use "!"
+       const store = useDrugDiscoveryStore();
+-      const results = await store.getAllDockingResultsList(this.experimentId);
++      const results = await store.getAllDockingResultsList(this.experimentId!);
+ 
+-      for (const result of results.results_list) {
+-        const targetMeta = await store.fetchTargetMetaData(this.experimentId, result.target_id);
+-        const ligandMeta = await store.fetchLigandMetaData(this.experimentId, result.target_id, result.ligand_id);
+-        const isDataAvailableResponse = await store.checkDockingResultAvailable(this.experimentId,
++      for (const result of results?.results_list ?? []) {
++        const targetMeta = await store.fetchTargetMetaData(this.experimentId!, result.target_id);
++        const ligandMeta = await store.fetchLigandMetaData(this.experimentId!, result.target_id, result.ligand_id);
++        const isDataAvailableResponse = await store.checkDockingResultAvailable(this.experimentId!,
+           result.target_id,
+           result.ligand_id,
+           result.job_id);
+-        const pocketIdsResponse = await store.getJobPocketIds(this.experimentId, result.target_id, result.ligand_id, result.job_id);
++        const pocketIdsResponse = await store.getJobPocketIds(this.experimentId!, result.target_id, result.ligand_id, result.job_id);
++
++        let pocketIds = null;
++
+         if (pocketIdsResponse && pocketIdsResponse.pocket_ids) {
+-          result.pocketIds = pocketIdsResponse.pocket_ids;
++          pocketIds = pocketIdsResponse.pocket_ids;
+         }
+-        if (isDataAvailableResponse.result_available) {
++        if (isDataAvailableResponse?.result_available) {
+           const dockingResult = {
+             ...result,
+-            target_name: targetMeta.target_name,
+-            ligand_name: ligandMeta.ligand_name,
++            target_name: targetMeta?.target_name,
++            ligand_name: ligandMeta?.ligand_name,
+             resultData: null, // Initialize resultData as null
+-            pocketIds: result.pocketIds || null,
++            pocketIds: pocketIds || null,
++            expanded: false,
+           };
+           this.dockingResults.push(dockingResult);
+         }
+       }
+     },
+ 
+-    async deleteDockingJob(row) {
++    async deleteDockingJob(row: DockingResult) {
+       const store = useDrugDiscoveryStore();
+       // Call the API to delete the docking job
+-      await store.deleteDockingJob(this.experimentId, row.target_id, row.ligand_id, row.job_id);
++      await store.deleteDockingJob(this.experimentId!, row.target_id, row.ligand_id, row.job_id);
+ 
+       // Remove the job from the dockingResults array
+       this.dockingResults = this.dockingResults.filter(job => job.job_id !== row.job_id);
+@@ -260,7 +309,7 @@ export default {
+       }
+     },
+ 
+-    async fetchResultDataForRow(row) {
++    async fetchResultDataForRow(row: DockingResult) {
+       if (!row.expanded) {
+         // Expand the row
+         row.expanded = true;
+@@ -269,9 +318,22 @@ export default {
+         if (!row.resultData) {
+           // Fetch result data here using your store method
+           const store = useDrugDiscoveryStore();
+-          row.resultData = await store.getDockingJobResultData(this.experimentId, row.target_id, row.ligand_id, row.job_id);
+-          row.resultData.predicted_pdb_file = new File([new Blob([row.resultData.predicted_pdb])], "protein.pdb");
+-          row.resultData.predicted_sdf_file = new File([new Blob([row.resultData.predicted_sdf])], "ligand.sdf");
++          try {
++            const response = await store.getDockingJobResultData(this.experimentId!, row.target_id, row.ligand_id, row.job_id);
++            if (response) {
++              // Assuming response contains properties predicted_pdb and predicted_sdf
++              // Assign the created ResultData object to the row
++              row.resultData = {
++                predicted_pdb: response.predicted_pdb,
++                predicted_sdf: response.predicted_sdf,
++                predicted_pdb_file: response.predicted_pdb ? new File([new Blob([response.predicted_pdb])], "protein.pdb") : undefined,
++                predicted_sdf_file: response.predicted_sdf ? new File([new Blob([response.predicted_sdf])], "ligand.sdf") : undefined,
++              };
++            }
++          } catch (error) {
++            console.error("Error fetching result data for row:", error);
++            // Handle error, possibly set resultData to a default state or show an error message
++          }
+         }
+       } else {
+         // Collapse the row if it's already expanded
+@@ -281,57 +343,61 @@ export default {
+ 
+     async fetchJobsInQueue() {
+       const store = useDrugDiscoveryStore();
+-      const results = await store.getAllDockingResultsList(this.experimentId);
++      const results = await store.getAllDockingResultsList(this.experimentId!);
+ 
+-      for (const result of results.results_list) {
+-        const targetMeta = await store.fetchTargetMetaData(this.experimentId, result.target_id);
+-        const ligandMeta = await store.fetchLigandMetaData(this.experimentId, result.target_id, result.ligand_id);
+-        const isDataAvailableResponse = await store.checkDockingResultAvailable(this.experimentId,
++      for (const result of results?.results_list ?? []) {
++        const targetMeta = await store.fetchTargetMetaData(this.experimentId!, result.target_id);
++        const ligandMeta = await store.fetchLigandMetaData(this.experimentId!, result.target_id, result.ligand_id);
++        const isDataAvailableResponse = await store.checkDockingResultAvailable(this.experimentId!,
+           result.target_id,
+           result.ligand_id,
+           result.job_id);
+-        const pocketIdsResponse = await store.getJobPocketIds(this.experimentId, result.target_id, result.ligand_id, result.job_id);
+-        if (pocketIdsResponse && pocketIdsResponse.pocketIds) {
+-          result.pocketIds = pocketIdsResponse.pocketIds;
++        const pocketIdsResponse = await store.getJobPocketIds(this.experimentId!, result.target_id, result.ligand_id, result.job_id);
++
++        let pocketIds = null;
++        if (pocketIdsResponse && pocketIdsResponse.pocket_ids) {
++          pocketIds = pocketIdsResponse.pocket_ids;
+         }
+-        if (!isDataAvailableResponse.result_available) {
++        if (!isDataAvailableResponse?.result_available) {
+           this.jobsInQueue.push({
+             ...result,
+-            target_name: targetMeta.target_name,
+-            ligand_name: ligandMeta.ligand_name,
++            target_name: targetMeta?.target_name,
++            ligand_name: ligandMeta?.ligand_name,
+             progress: await this.calculateProgress(result),
+-            pocketIds: result.pocketIds || null,
++            pocketIds: pocketIds || null,
++            isAnyJobRunning: false
+           });
+         }
+       }
+     },
+ 
+-    async calculateProgress(result) {
++    async calculateProgress(result: ResultMetaData) {
+       const store = useDrugDiscoveryStore();
+       let progress = 0;
+ 
+-      const msaAvailable = await store.checkMsaDataAvailable(this.experimentId, result.target_id);
+-      if (msaAvailable.is_available) progress++;
++      const msaAvailable = await store.checkMsaDataAvailable(this.experimentId!, result.target_id);
++      if (msaAvailable?.is_available) progress++;
+ 
+-      const foldingAvailable = await store.checkFoldingDataAvailable(this.experimentId, result.target_id);
+-      if (foldingAvailable.is_available) progress++;
++      const foldingAvailable = await store.checkFoldingDataAvailable(this.experimentId!, result.target_id);
++      if (foldingAvailable?.is_available) progress++;
+ 
+-      const pocketAvailable = await store.checkPocketDataAvailable(this.experimentId, result.target_id, result.ligand_id, result.job_id);
+-      if (pocketAvailable.is_available) progress++;
++      const pocketAvailable = await store.checkPocketDataAvailable(this.experimentId!, result.target_id, result.ligand_id, result.job_id);
++      if (pocketAvailable?.is_available) progress++;
+ 
+-      const dockingAvailable = await store.checkDockingResultAvailable(this.experimentId, result.target_id, result.ligand_id, result.job_id);
+-      if (dockingAvailable.result_available) progress++;
++      const dockingAvailable = await store.checkDockingResultAvailable(this.experimentId!, result.target_id, result.ligand_id, result.job_id);
++      if (dockingAvailable?.result_available) progress++;
+ 
+       return progress;
+     },
+ 
+     runCurrentJob() {
+-      if (!this.currentJob.isAnyJobRunning) {
++      if (!this.currentJob?.isAnyJobRunning) {
++        if (this.currentJob != null)
+         this.runDockingJob(this.currentJob);
+       }
+     },
+ 
+-    async runDockingJob(row) {
++    async runDockingJob(row: Job) {
+       if (this.isAnyJobRunning) return;
+ 
+       // Mark the selected job as running
+@@ -342,7 +408,7 @@ export default {
+ 
+       // Call the store method to start the job
+       const store = useDrugDiscoveryStore();
+-      await store.runDockingJob(this.experimentId, row.target_id, row.ligand_id, row.job_id);
++      await store.runDockingJob(this.experimentId!, row.target_id, row.ligand_id, row.job_id);
+ 
+       // Update the current job
+       await this.updateCurrentJob();
+@@ -357,49 +423,40 @@ export default {
+ 
+       if (!this.currentJob) return;
+ 
+-      let allDataAvailable = false;
+-
+-      // Check if data is available for each step only if the respective service is healthy
+-      if (this.msaServiceHealthy) {
+-        const msaAvailableResp = await store.checkMsaDataAvailable(this.experimentId, this.currentJob.target_id);
+-        this.currentJob.msaAvailable = msaAvailableResp.is_available;
+-        if (!this.currentJob.msaAvailable) {
+-          const msaRunningResp = await store.checkMsaJobIsRunning(this.currentJob.job_id);
+-          this.currentJob.msaRunning = msaRunningResp.is_running;
+-        }
++      const msaAvailableResp = await store.checkMsaDataAvailable(this.experimentId!, this.currentJob.target_id);
++      this.currentJob.msaAvailable = msaAvailableResp?.is_available ?? false;
++      if (!this.currentJob.msaAvailable && this.msaServiceHealthy) {
++        const msaRunningResp = await store.checkMsaJobIsRunning(this.currentJob.job_id);
++        this.currentJob.msaRunning = msaRunningResp?.is_running ?? false;
+       }
+ 
+-      if (this.p2RankServiceHealthy) {
+-        const pocketAvailableResp = await store.checkPocketDataAvailable(this.experimentId, this.currentJob.target_id, this.currentJob.ligand_id, this.currentJob.job_id);
+-        this.currentJob.pocketAvailable = pocketAvailableResp.is_available;
+-        if (!this.currentJob.pocketAvailable) {
+-          const p2RankRunningResp = await store.checkP2RankJobIsRunning(this.currentJob.job_id);
+-          this.currentJob.pocketRunning = p2RankRunningResp.is_running;
+-        }
++      const pocketAvailableResp = await store.checkPocketDataAvailable(this.experimentId!, this.currentJob.target_id, this.currentJob.ligand_id, this.currentJob.job_id);
++      this.currentJob.pocketAvailable = pocketAvailableResp?.is_available ?? false;
++      if (!this.currentJob.pocketAvailable && this.p2RankServiceHealthy) {
++        const p2RankRunningResp = await store.checkP2RankJobIsRunning(this.currentJob.job_id);
++        this.currentJob.pocketRunning = p2RankRunningResp?.is_running ?? false;
+       }
+ 
+-      if (this.foldingServiceHealthy) {
+-        const foldingAvailableResp = await store.checkFoldingDataAvailable(this.experimentId, this.currentJob.target_id);
+-        this.currentJob.foldingAvailable = foldingAvailableResp.is_available;
+-        if (!this.currentJob.foldingAvailable) {
+-          const foldingRunningResp = await store.checkFoldingJobIsRunning(this.currentJob.job_id);
+-          this.currentJob.foldingRunning = foldingRunningResp.is_running;
+-        }
++      const foldingAvailableResp = await store.checkFoldingDataAvailable(this.experimentId!, this.currentJob.target_id);
++      this.currentJob.foldingAvailable = foldingAvailableResp?.is_available ?? false;
++      if (!this.currentJob.foldingAvailable && this.foldingServiceHealthy) {
++        const foldingRunningResp = await store.checkFoldingJobIsRunning(this.currentJob.job_id);
++        this.currentJob.foldingRunning = foldingRunningResp?.is_running ?? false;
+       }
+ 
+-      if (this.umolServiceHealthy) {
+-        const dockingResultAvailableResp = await store.checkDockingResultAvailable(this.experimentId, this.currentJob.target_id, this.currentJob.ligand_id, this.currentJob.job_id);
+-        this.currentJob.dockingAvailable = dockingResultAvailableResp.result_available;
+-        if (!this.currentJob.dockingAvailable) {
+-          const umolRunningResp = await store.checkUmolJobIsRunning(this.currentJob.job_id);
+-          this.currentJob.dockingRunning = umolRunningResp.is_running;
+-        }
++      const dockingResultAvailableResp = await store.checkDockingResultAvailable(this.experimentId!, this.currentJob.target_id, this.currentJob.ligand_id, this.currentJob.job_id);
++      this.currentJob.dockingAvailable = dockingResultAvailableResp?.result_available ?? false;
++      if (!this.currentJob.dockingAvailable && this.umolServiceHealthy) {
++        const umolRunningResp = await store.checkUmolJobIsRunning(this.currentJob.job_id);
++        this.currentJob.dockingRunning = umolRunningResp?.is_running ?? false;
+       }
+ 
+       // Update the overall running status based on individual service running status
+-      this.currentJob.isAnyJobRunning = this.currentJob.msaRunning || this.currentJob.pocketRunning || this.currentJob.foldingRunning || this.currentJob.dockingRunning;
++      if (this.currentJob) {
++        this.currentJob.isAnyJobRunning = (this.currentJob.msaRunning || this.currentJob.pocketRunning || this.currentJob.foldingRunning || this.currentJob.dockingRunning) ?? false;
++      }
+ 
+-      allDataAvailable = this.currentJob.msaAvailable && this.currentJob.pocketAvailable && this.currentJob.foldingAvailable && this.currentJob.dockingAvailable;
++      let allDataAvailable = this.currentJob.msaAvailable && this.currentJob.pocketAvailable && this.currentJob.foldingAvailable && this.currentJob.dockingAvailable;
+       // If all data is available, refresh the current job and results
+       if (allDataAvailable) {
+         this.dockingResults = [];
+@@ -410,7 +467,7 @@ export default {
+         await this.fetchJobsInQueue();
+       }
+     },
+-    getStepClass(job, step) {
++    getStepClass(job: Job | null, step: string) {
+       if (!job) return 'bg-grey-3 text-black q-ma-md';
+ 
+       if (job[`${step}Available`]) {
+@@ -434,13 +491,16 @@ export default {
+   },
+   mounted() {
+     const route = useRoute();
+-    this.experimentId = route.params.experimentId;
++    this.experimentId = route.params.experimentId as string;
+     this.fetchDockingResults();
+     this.fetchJobsInQueue();
+-    this.polling = setInterval(this.updateCurrentJob, 1000);
++    this.polling = window.setInterval(this.updateCurrentJob, 1000);
+   },
+   beforeUnmount() {
+-    clearInterval(this.polling); // Clear polling interval when component is destroyed
++    if (this.polling !== null) {
++      clearInterval(this.polling); // TypeScript knows this.polling is not null here
++      this.polling = null;
++    }
+   },
+-};
++})
+ </script>
+diff --git a/frontend/src/features/drug_discovery/components/UploadLigandsStep.vue b/frontend/src/features/drug_discovery/components/UploadLigandsStep.vue
+index 534d89a9..7c3f4ca5 100644
+--- a/frontend/src/features/drug_discovery/components/UploadLigandsStep.vue
++++ b/frontend/src/features/drug_discovery/components/UploadLigandsStep.vue
+@@ -33,13 +33,15 @@
+   </q-page>
+ </template>
+ 
+-<script>
++<script lang="ts">
+ import {useDrugDiscoveryStore} from "src/features/drug_discovery/storage";
+-import {Notify, QSpinner, QSpinnerOrbit} from "quasar";
++import {Notify, QSpinnerOrbit} from "quasar";
+ import {useRoute} from "vue-router";
+ import TargetsLigandsList from "src/features/drug_discovery/components/targets/TargetsLigandsList.vue";
++import {TargetMetaData} from "src/api/client/models/TargetMetaData.ts";
++import {defineComponent} from "vue";
+ 
+-export default {
++export default defineComponent({
+   name: "ExperimentSetup",
+   components: {
+     TargetsLigandsList,
+@@ -47,13 +49,14 @@ export default {
+   data() {
+     return {
+       loading: true,
+-      targets: null
++      targets: [] as TargetMetaData[],
++      experimentId: null as string | null
+     };
+   },
+   async mounted() {
+     const store = useDrugDiscoveryStore();
+     const route = useRoute();
+-    this.experimentId = route.params.experimentId;
++    this.experimentId = route.params.experimentId as string;
+     this.$q.loading.show({
+       spinner: QSpinnerOrbit,
+       message: `Fetching targets for experiment`
+@@ -72,5 +75,5 @@ export default {
+       this.$q.loading.hide();
+     }
+   },
+-};
++})
+ </script>
+diff --git a/frontend/src/features/drug_discovery/components/UploadTargetsStep.vue b/frontend/src/features/drug_discovery/components/UploadTargetsStep.vue
+index 5542155e..65528b55 100644
+--- a/frontend/src/features/drug_discovery/components/UploadTargetsStep.vue
++++ b/frontend/src/features/drug_discovery/components/UploadTargetsStep.vue
+@@ -41,13 +41,15 @@
+   </q-page>
+ </template>
+ 
+-<script>
++<script lang="ts">
+ import {useDrugDiscoveryStore} from "src/features/drug_discovery/storage";
+-import {Notify, QSpinner, QSpinnerOrbit} from "quasar";
++import {Notify, QSpinnerOrbit} from "quasar";
+ import {useRoute} from "vue-router";
+ import TargetsList from "src/features/drug_discovery/components/targets/TargetsList.vue";
++import {defineComponent} from "vue";
++import {TargetMetaData} from "../../../api/client";
+ 
+-export default {
++export default defineComponent({
+   name: "ExperimentSetup",
+   components: {
+     TargetsList,
+@@ -55,14 +57,15 @@ export default {
+   data() {
+     return {
+       loading: true,
+-      targets: null
++      targets: [] as TargetMetaData[],
++      experimentId: null as string | null
+     };
+   },
+   async mounted() {
+     const store = useDrugDiscoveryStore();
+     const route = useRoute();
+ 
+-    this.experimentId = route.params.experimentId;
++    this.experimentId = route.params.experimentId as string;
+     this.$q.loading.show({
+       spinner: QSpinnerOrbit,
+       message: `Fetching targets for experiment`
+@@ -81,5 +84,5 @@ export default {
+       this.$q.loading.hide();
+     }
+   },
+-};
++})
+ </script>
+diff --git a/frontend/src/features/drug_discovery/components/ligands/LigandDetail.vue b/frontend/src/features/drug_discovery/components/ligands/LigandDetail.vue
+index bda012ac..8c635cc3 100644
+--- a/frontend/src/features/drug_discovery/components/ligands/LigandDetail.vue
++++ b/frontend/src/features/drug_discovery/components/ligands/LigandDetail.vue
+@@ -18,18 +18,19 @@
+     <q-card-section>
+       <div class="text-h6">Ligand: {{ ligand.ligand_name }}</div>
+       <div class="text-subtitle1">SMILES: {{ ligand.data.smiles }}</div>
+-      <PdbViewer v-if="ligand.data.sdf_file" :sdf-file="ligand.data.sdf_file" />
++      <PdbViewer v-if="sdfFile" :sdf-file="sdfFile" />
+     </q-card-section>
+   </q-card>
+ </template>
+ 
+-<script>
++<script lang="ts">
+ import { QCard, QCardSection } from "quasar";
+-import * as NGL from "ngl";
+ 
+ import PdbViewer from 'src/components/PdbViewer.vue'
++import {defineComponent, PropType} from "vue";
++import {ExtendedLigandMetaData} from "../targets/types";
+ 
+-export default {
++export default defineComponent({
+   name: "LigandDetail",
+   components: {
+     PdbViewer,
+@@ -38,32 +39,22 @@ export default {
+   },
+   props: {
+     originalLigand: {
+-      type: Object,
++      type: Object as PropType<ExtendedLigandMetaData>,
+       required: true
+     },
+   },
+   data() {
+     return {
+-      viewer: null,
+-      ligand: this.originalLigand
++      ligand: this.originalLigand,
++      sdfFile: null as File | null
+     };
+   },
+   methods: {
+   },
+   mounted() {
+-    this.ligand.data.sdf_file = new File([new Blob([this.ligand.data.sdf_file])], "ligand.sdf");
+-  },
+-  beforeUnmount() {
+-    if (this.viewer) {
+-      this.viewer.dispose();
++    if (this.ligand.data?.sdf_file) {
++      this.sdfFile= new File([new Blob([this.ligand.data.sdf_file])], "ligand.sdf");
+     }
+   },
+-};
++})
+ </script>
+-
+-<style>
+-.ligand-viewer {
+-  width: 100%;
+-  height: 400px;
+-}
+-</style>
+diff --git a/frontend/src/features/drug_discovery/components/targets/TargetDetail.vue b/frontend/src/features/drug_discovery/components/targets/TargetDetail.vue
+index 769be632..6f131b7e 100644
+--- a/frontend/src/features/drug_discovery/components/targets/TargetDetail.vue
++++ b/frontend/src/features/drug_discovery/components/targets/TargetDetail.vue
+@@ -95,13 +95,13 @@
+   </q-card>
+ </template>
+ 
+-<script>
+-import {QCard, QCardSection, QBtn, QDialog, QCardActions, Notify, QSpinnerOrbit, useQuasar} from "quasar";
++<script lang="ts">
++import {QCard, QCardSection, QBtn, QDialog, QCardActions, QSpinnerOrbit, QVueGlobals} from "quasar";
+ import { useDrugDiscoveryStore } from "src/features/drug_discovery/storage";
+ import PdbViewer from "src/components/PdbViewer.vue";
+-import {obtainErrorResponse} from "../../../../api/errorWrapper";
++import {defineComponent} from "vue";
+ 
+-export default {
++export default defineComponent({
+   name: "TargetDetail",
+   components: {
+     QCard,
+@@ -126,7 +126,6 @@ export default {
+       selectedResidues: new Set(),
+       showNoPocketModal: false,
+       selectionMode: false,
+-      viewer: null,
+       loading3DView: true,
+       predictingFolding: false,
+       predictingPocket: false,
+@@ -142,6 +141,7 @@ export default {
+         { label: 'Esmfold_light (up to 400 amino acids)', value: 'light' },
+         { label: 'Esmfold', value: 'full' },
+       ],
++      quasar: null as QVueGlobals | null,
+     };
+   },
+   methods: {
+@@ -169,7 +169,7 @@ export default {
+     toggleSelectionMode() {
+       this.selectionMode = !this.selectionMode;
+     },
+-    toggleResidueSelection(index) {
++    toggleResidueSelection(index: number) {
+       if (this.selectionMode) {
+         let newPocketIds = [...this.target.data.pocketIds]; // Create a copy of the pocketIds array
+         const pocketIndex = newPocketIds.indexOf(index);
+@@ -183,7 +183,7 @@ export default {
+         this.target.data.pocketIds = newPocketIds; // Assign the new array back to pocketIds to trigger reactivity
+       }
+     },
+-    isResidueSelected(index) {
++    isResidueSelected(index: number) {
+       return this.target.data.pocketIds && this.target.data.pocketIds.includes(index);
+     },
+     clearBindingPocket() {
+@@ -237,7 +237,7 @@ export default {
+     },
+     changeTargetName() {
+       const store = useDrugDiscoveryStore();
+-      this.quasar.dialog({
++      this.$q.dialog({
+         color: 'positive',
+         title: 'Prompt',
+         message: 'Enter new target name',
+@@ -251,13 +251,13 @@ export default {
+       }).onOk(async data => {
+         if (!data)
+           return;
+-        this.quasar.loading.show({
++        this.$q.loading.show({
+           spinner: QSpinnerOrbit,
+           message: 'Changing target name'
+         });
+         await store.changeTargetName(this.experimentId, this.target.metaData.target_id, data);
+         this.target.metaData.target_name = data;
+-        this.quasar.loading.hide();
++        this.$q.loading.hide();
+       });
+     }
+   },
+@@ -283,14 +283,8 @@ export default {
+   },
+   mounted() {
+     this.target.data.pdb_file = new File([new Blob([this.target.data.pdbContents])], "protein.pdb");
+-    this.quasar = useQuasar();
+   },
+-  beforeUnmount() {
+-    if (this.viewer) {
+-      this.viewer.dispose();
+-    }
+-  },
+-};
++})
+ </script>
+ 
+ <style>
+diff --git a/frontend/src/features/drug_discovery/components/targets/TargetsLigandsList.vue b/frontend/src/features/drug_discovery/components/targets/TargetsLigandsList.vue
+index c0eb3051..72e79481 100644
+--- a/frontend/src/features/drug_discovery/components/targets/TargetsLigandsList.vue
++++ b/frontend/src/features/drug_discovery/components/targets/TargetsLigandsList.vue
+@@ -63,7 +63,7 @@
+               <q-item v-for="(job, jobIndex) in ligand.jobs" :key="job.job_id" class="q-pa-md">
+                 <q-item-section>Job ID: {{ job.job_id }}</q-item-section>
+                 <q-item-section side top>
+-                  <q-btn icon="delete" color="negative" flat @click="deleteJob(target, ligand, job, jobIndex)" />
++                  <q-btn icon="delete" color="negative" flat @click="deleteJob(target, ligand, job.job_id, jobIndex)" />
+                 </q-item-section>
+               </q-item>
+             </q-list>
+@@ -82,20 +82,25 @@
+ 
+       <q-card-actions align="right">
+         <q-btn flat label="Close" color="negative" @click="uploadLigandDialog = false" />
+-        <q-btn flat label="Upload" color="positive" @click="() => handleLigandFileUpload(selectedTarget)" />
++        <q-btn flat label="Upload" color="positive" @click="() => handleLigandFileUpload(selectedTarget!)" />
+       </q-card-actions>
+     </q-card>
+   </q-dialog>
+ </template>
+ 
+-<script>
++<script lang="ts">
+ import TargetDetail from "src/features/drug_discovery/components/targets/TargetDetail.vue";
+ import LigandDetail from "src/features/drug_discovery/components/ligands/LigandDetail.vue";
++import {TargetMetaData} from "src/api/client/models/TargetMetaData.ts";
++import {LigandMetaData} from "src/api/client/models/LigandMetaData.ts";
++import {ResultMetaData} from "src/api/client/models/ResultMetaData.ts";
+ import {useDrugDiscoveryStore} from "src/features/drug_discovery/storage";
+ import {QSpinnerOrbit} from "quasar";
++import {defineComponent} from "vue";
++import {ExtendedLigandMetaData, ExtendedTargetMetaData} from "./types";
+ 
+-export default {
+-  name: "TargetsList",
++export default defineComponent({
++  name: "TargetsLigandsList",
+   components: {
+     TargetDetail,
+     LigandDetail,
+@@ -106,27 +111,32 @@ export default {
+       required: true,
+     },
+     originalTargets: {
+-      type: Array,
++      type: Array<TargetMetaData>,
+       required: true,
+     },
+   },
+   data() {
+     return {
+-      targets: this.originalTargets,
++      targets: this.originalTargets.map(target => ({
++        ...target,
++        loadingLigands: false,
++        ligands: [],
++        loadingTargetData: false,
++      })) as ExtendedTargetMetaData[],
+       uploadTargetDialog: false,
+       uploadingTargetFiles: [],
+       uploadLigandDialog: false,
+-      uploadingLigandFiles: [],
+-      selectedTarget: null,
++      uploadingLigandFiles: [] as File[],
++      selectedTarget: null as ExtendedTargetMetaData | null,
+       uploadToAllTargets: false
+     };
+   },
+   methods: {
+-    openLigandUploadDialog(target) {
++    openLigandUploadDialog(target: ExtendedTargetMetaData) {
+       this.selectedTarget = target;
+       this.uploadLigandDialog = true;
+     },
+-    async selectTarget(target) {
++    async selectTarget(target: ExtendedTargetMetaData) {
+       this.$q.loading.show({
+         spinner: QSpinnerOrbit,
+         message: `Selecting target`
+@@ -139,24 +149,29 @@ export default {
+         this.$q.loading.hide();
+       }
+     },
+-    async getLigandsForTarget(target) {
++    async getLigandsForTarget(target: ExtendedTargetMetaData) {
+       if (target.ligands && target.ligands.length > 0) {
+         return;
+       }
+       const store = useDrugDiscoveryStore();
+       target.loadingLigands = true;
+       try {
+-        target.ligands = await store.fetchLigandsForTarget(
++        const originalLigands = await store.fetchLigandsForTarget(
+           this.experimentId,
+           target.target_id
+         );
++        target.ligands = originalLigands?.map(ligand => ({
++          ...ligand,
++          jobs: [],
++          loadingLigandData: false,
++        })) as ExtendedLigandMetaData[];
+       } catch (error) {
+         console.error("Error fetching ligands:", error);
+       } finally {
+         target.loadingLigands = false;
+       }
+     },
+-    async handleLigandFileUpload(target) {
++    async handleLigandFileUpload(target: ExtendedTargetMetaData) {
+       const store = useDrugDiscoveryStore();
+       const targets = this.uploadToAllTargets ? this.targets : [target];
+ 
+@@ -169,8 +184,13 @@ export default {
+         for (let t of targets) {
+           for (let file of this.uploadingLigandFiles) {
+             const ligand = await store.uploadLigandToTarget(this.experimentId, t.target_id, file);
+-            t.ligands.push(ligand);
+-            await this.registerJob(t, ligand);
++            const new_ligand = {
++              ...ligand,
++              jobs: [],
++              loadingLigandData: false
++            } as ExtendedLigandMetaData
++            t.ligands.push(new_ligand);
++            await this.registerJob(t, new_ligand);
+           }
+         }
+         this.uploadLigandDialog = false;
+@@ -180,28 +200,28 @@ export default {
+         this.$q.loading.hide();
+       }
+     },
+-    async registerJob(target, ligand) {
++    async registerJob(target: ExtendedTargetMetaData, ligand: ExtendedLigandMetaData) {
+       const store = useDrugDiscoveryStore();
+       const response = await store.registerDockingJob(this.experimentId, target.target_id, ligand.ligand_id);
+       if (response && response.job_id) {
+         ligand.jobs.push({ job_id: response.job_id });
+       }
+     },
+-    async deleteJob(target, ligand, job, jobIndex) {
++    async deleteJob(target: ExtendedTargetMetaData, ligand: ExtendedLigandMetaData, job_id: string, jobIndex: number) {
+       const store = useDrugDiscoveryStore();
+-      const response = await store.deleteDockingJob(this.experimentId, target.target_id, ligand.ligand_id, job.job_id);
++      const response = await store.deleteDockingJob(this.experimentId, target.target_id, ligand.ligand_id, job_id);
+       if (response) {
+         ligand.jobs.splice(jobIndex, 1); // Remove the job from the list
+       }
+     },
+-    async getTargetData(target) {
++    async getTargetData(target: ExtendedTargetMetaData) {
+       const store = useDrugDiscoveryStore();
+       target.loadingTargetData = true;
+       try {
+         const data = await store.fetchTargetData(this.experimentId, target.target_id);
+         target.data = {
+-          proteinSequence: data.sequence,
+-          pdbContents: data.pdbContents,
++          proteinSequence: data?.sequence,
++          pdbContents: data?.pdbContents,
+         };
+       } catch (error) {
+         console.error('Error fetching target data:', error);
+@@ -209,24 +229,24 @@ export default {
+         target.loadingTargetData = false;
+       }
+     },
+-    async getLigandData(target, ligand) {
++    async getLigandData(target: ExtendedTargetMetaData, ligand: ExtendedLigandMetaData) {
+       const store = useDrugDiscoveryStore();
+       ligand.loadingLigandData = true;
+       try {
+         const data = await store.fetchLigandData(this.experimentId, target.target_id, ligand.ligand_id);
+         ligand.data = {
+-          sdf_file: data.ligandSdf,
+-          smiles: data.ligandSmiles,
++          sdf_file: data?.ligandSdf,
++          smiles: data?.ligandSmiles,
+         };
+         const jobs = await store.getDockingResultsListForTargetLigand(this.experimentId, target.target_id, ligand.ligand_id);
+-        ligand.jobs = jobs.results_list;// Store the jobs in the ligand object
++        ligand.jobs = jobs?.results_list as ResultMetaData[];// Store the jobs in the ligand object
+       } catch (error) {
+         console.error('Error fetching ligand data:', error);
+       } finally {
+         ligand.loadingLigandData = false;
+       }
+     },
+-    async deleteTarget(targetToDelete) {
++    async deleteTarget(targetToDelete: TargetMetaData) {
+       const store = useDrugDiscoveryStore();
+       this.$q.loading.show({
+         spinner: QSpinnerOrbit,
+@@ -242,7 +262,7 @@ export default {
+         this.$q.loading.hide();
+       }
+     },
+-    async deleteLigand(target, ligandToDelete) {
++    async deleteLigand(target: TargetMetaData, ligandToDelete: LigandMetaData) {
+       const store = useDrugDiscoveryStore();
+       this.$q.loading.show({
+         spinner: QSpinnerOrbit,
+@@ -259,5 +279,6 @@ export default {
+       }
+     },
+   },
+-};
++}
++)
+ </script>
+diff --git a/frontend/src/features/drug_discovery/components/targets/TargetsList.vue b/frontend/src/features/drug_discovery/components/targets/TargetsList.vue
+index e6dd79ba..5b386dcf 100644
+--- a/frontend/src/features/drug_discovery/components/targets/TargetsList.vue
++++ b/frontend/src/features/drug_discovery/components/targets/TargetsList.vue
+@@ -43,12 +43,15 @@
+   </q-dialog>
+ </template>
+ 
+-<script>
++<script lang="ts">
+ import TargetDetail from "src/features/drug_discovery/components/targets/TargetDetail.vue";
+ import {useDrugDiscoveryStore} from "src/features/drug_discovery/storage";
+ import {QSpinnerOrbit} from "quasar";
++import {defineComponent} from "vue";
++import {ExtendedTargetMetaData} from "./types";
++import {TargetMetaData} from "../../../../api/client";
+ 
+-export default {
++export default defineComponent({
+   name: "TargetsList",
+   components: {
+     TargetDetail,
+@@ -59,13 +62,18 @@ export default {
+       required: true,
+     },
+     originalTargets: {
+-      type: Array,
++      type: Array<TargetMetaData>,
+       required: true,
+     },
+   },
+   data() {
+     return {
+-      targets: this.originalTargets,
++      targets: this.originalTargets.map(target => ({
++      ...target,
++      loadingLigands: false,
++      ligands: [],
++      loadingTargetData: false,
++      })) as ExtendedTargetMetaData[],
+       uploadTargetDialog: false,
+       uploadingTargetFiles: [],
+       uploadLigandDialog: false,
+@@ -75,27 +83,9 @@ export default {
+     };
+   },
+   methods: {
+-    async selectTarget(target) {
+-      await this.getLigandsForTarget(target);
++    async selectTarget(target: ExtendedTargetMetaData) {
+       await this.getTargetData(target);
+     },
+-    async getLigandsForTarget(target) {
+-      if (target.ligands && target.ligands.length > 0) {
+-        return;
+-      }
+-      const store = useDrugDiscoveryStore();
+-      target.loadingLigands = true;
+-      try {
+-        target.ligands = await store.fetchLigandsForTarget(
+-            this.experimentId,
+-            target.target_id
+-        );
+-      } catch (error) {
+-        console.error("Error fetching ligands:", error);
+-      } finally {
+-        target.loadingLigands = false;
+-      }
+-    },
+     async handleTargetFileUpload() {
+       const store = useDrugDiscoveryStore();
+ 
+@@ -104,21 +94,40 @@ export default {
+         message: `Uploading target files`
+       });
+ 
+-      for (let file of this.uploadingTargetFiles) {
+-        await store.uploadTargetToExperiment(this.experimentId, file);
+-      }
++      try {
++        // Assuming uploadTargetToExperiment can handle multiple files and returns an array of TargetMetaData
++        const uploadedTargets: TargetMetaData[] = [];
++        for (let file of this.uploadingTargetFiles) {
++          const uploadResp = await store.uploadTargetToExperiment(this.experimentId, file);
++          if (uploadResp) {
++            uploadedTargets.push(...uploadResp);
++          }
++        }
+ 
+-      this.uploadTargetDialog = false;
+-      this.$q.loading.hide();
++        // Add additional properties to each uploaded target and push them into the targets array
++        const extendedTargets = uploadedTargets.map(target => ({
++          ...target,
++          loadingLigands: false,
++          ligands: [],
++          loadingTargetData: false,
++        })) as ExtendedTargetMetaData[];
++
++        this.targets.push(...extendedTargets);
++      } catch (error) {
++        console.error('Error uploading target files:', error);
++      } finally {
++        this.uploadTargetDialog = false;
++        this.$q.loading.hide();
++      }
+     },
+-    async getTargetData(target) {
++    async getTargetData(target: ExtendedTargetMetaData) {
+       const store = useDrugDiscoveryStore();
+       target.loadingTargetData = true;
+       try {
+         const data = await store.fetchTargetData(this.experimentId, target.target_id);
+         target.data = {
+-          proteinSequence: data.sequence,
+-          pdbContents: data.pdbContents,
++          proteinSequence: data?.sequence,
++          pdbContents: data?.pdbContents,
+         };
+       } catch (error) {
+         console.error('Error fetching target data:', error);
+@@ -126,7 +135,7 @@ export default {
+         target.loadingTargetData = false;
+       }
+     },
+-    async deleteTarget(targetToDelete) {
++    async deleteTarget(targetToDelete: ExtendedTargetMetaData) {
+       const store = useDrugDiscoveryStore();
+       this.$q.loading.show({
+         spinner: QSpinnerOrbit,
+@@ -143,5 +152,6 @@ export default {
+       }
+     },
+   },
+-};
++}
++)
+ </script>
+diff --git a/frontend/src/features/drug_discovery/components/targets/types.ts b/frontend/src/features/drug_discovery/components/targets/types.ts
+new file mode 100644
+index 00000000..29faaacb
+--- /dev/null
++++ b/frontend/src/features/drug_discovery/components/targets/types.ts
+@@ -0,0 +1,21 @@
++import {TargetMetaData} from "src/api/client/models/TargetMetaData.ts";
++import {LigandMetaData} from "src/api/client/models/LigandMetaData.ts";
++
++export interface ExtendedTargetMetaData extends TargetMetaData {
++  loadingLigands: boolean;
++  ligands: ExtendedLigandMetaData[];
++  loadingTargetData: boolean;
++  data?: {
++    proteinSequence?: string;
++    pdbContents?: string | null;
++  };
++}
++
++export interface ExtendedLigandMetaData extends LigandMetaData {
++  loadingLigandData: boolean;
++  jobs: Array<{ job_id: string }>;
++  data?: {
++    sdf_file?: string;
++    smiles?: string;
++  };
++}
+diff --git a/nolabs/features/drug_discovery/get_folding.py b/nolabs/features/drug_discovery/get_folding.py
+index 0b9aba59..238e4bf8 100644
+--- a/nolabs/features/drug_discovery/get_folding.py
++++ b/nolabs/features/drug_discovery/get_folding.py
+@@ -3,6 +3,7 @@
+ from nolabs.features.drug_discovery.data_models.target import TargetId
+ from nolabs.features.drug_discovery.services.target_file_management import TargetsFileManagement
+ 
++
+ class GetFoldedStructureFeature:
+     def __init__(self, file_management: TargetsFileManagement):
+         self._file_management = file_management
+@@ -15,4 +16,4 @@ def handle(self, request: GetFoldingRequest) -> GetFoldingResponse:
+ 
+         pdb_contents = self._file_management.get_pdb_contents(experiment_id, target_id)
+ 
+-        return GetFoldingResponse(pdb_contents=pdb_contents)
+\ No newline at end of file
++        return GetFoldingResponse(pdb_contents=pdb_contents)
+diff --git a/nolabs/features/drug_discovery/result_management.py b/nolabs/features/drug_discovery/result_management.py
+index 56a65219..7859a3f0 100644
+--- a/nolabs/features/drug_discovery/result_management.py
++++ b/nolabs/features/drug_discovery/result_management.py
+@@ -129,6 +129,6 @@ def handle(self, request: CheckFoldingDataAvailableRequest) -> CheckFoldingDataA
+         experiment_id = ExperimentId(request.experiment_id)
+         target_id = TargetId(request.target_id)
+ 
+-        is_available = self._file_management.check_binding_pocket_exist(experiment_id, target_id)
++        is_available = self._file_management.check_folding_exist(experiment_id, target_id)
+ 
+         return CheckFoldingDataAvailableResponse(is_available=is_available)
+diff --git a/nolabs/features/drug_discovery/services/target_file_management.py b/nolabs/features/drug_discovery/services/target_file_management.py
+index eec3a7fb..be08177f 100644
+--- a/nolabs/features/drug_discovery/services/target_file_management.py
++++ b/nolabs/features/drug_discovery/services/target_file_management.py
+@@ -137,7 +137,7 @@ def get_pdb_contents(self, experiment_id: ExperimentId, target_id: TargetId) ->
+ 
+     def store_pdb_contents(self, experiment_id: ExperimentId, target_id: TargetId, pdb_content: str) -> None:
+         target_folder = self.target_folder(experiment_id, target_id)
+-        self.pdb_writer.write_pdb(pdb_content, os.path.join(target_folder, "target.pdb"), )
++        self.pdb_writer.write_pdb(pdb_content, os.path.join(target_folder, "target.pdb"))
+ 
+     def get_fasta_contents(self, experiment_id: ExperimentId, target_id: TargetId) -> str | None:
+         target_folder = self.target_folder(experiment_id, target_id)
+@@ -201,3 +201,8 @@ def check_binding_pocket_exist(self, experiment_id: ExperimentId, target_id: Tar
+         pocket_file = os.path.join(target_folder, self._settings.drug_discovery_pocket_directory_name,
+                                    self._settings.drug_discovery_pocket_file_name)
+         return os.path.exists(pocket_file)
++
++    def check_folding_exist(self, experiment_id: ExperimentId, target_id: TargetId) -> bool:
++        target_folder = self.target_folder(experiment_id, target_id)
++        pdb_file = os.path.join(os.path.join(target_folder, "target.pdb"))
++        return os.path.exists(pdb_file)

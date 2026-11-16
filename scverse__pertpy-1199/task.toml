@@ -1,0 +1,72 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1199"
+description = "Apply biome 2.6 formatting to YAML and Markdown"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "f22335a8256d39c4b6850795ce909c3106da8093"
+reference = "https://github.com/scverse/pertpy/pull/1199"
+source_access = "auto"
+built_at = "2026-11-15T16:36:46.328300+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:31c60dbe8acf8a8e19d7f549a54bb999f64eb73a0f96ef10cc93c4acefef7f40"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-11-04T10:33:53Z"
+diff_format = "unified"
+context_files = [
+    ".github/ISSUE_TEMPLATE/bug_report.yml",
+    ".github/dependabot.yml",
+    ".github/workflows/build.yml",
+    ".github/workflows/release.yml",
+    ".github/workflows/test.yml",
+    ".github/workflows/test_tutorials.yml",
+    ".readthedocs.yml",
+    "biome.jsonc",
+    "docs/changelog.md",
+    "docs/contributing.md",
+    "docs/quickstart.md",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 1350
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

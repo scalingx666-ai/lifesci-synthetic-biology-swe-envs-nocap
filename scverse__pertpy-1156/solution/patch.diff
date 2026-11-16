@@ -1,0 +1,67 @@
+diff --git a/src/pertpy/tools/_dialogue.py b/src/pertpy/tools/_dialogue.py
+index 70990068..bc6c2dc2 100644
+--- a/src/pertpy/tools/_dialogue.py
++++ b/src/pertpy/tools/_dialogue.py
+@@ -326,13 +326,14 @@ def _iterative_nnls(
+ 
+ @njit(cache=True)
+ def _solve_small(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+-    """Solve ``a @ x = b`` by Gaussian elimination with partial pivoting, all NaN if ``a`` is singular."""
++    """Solve ``a @ x = b`` by Gaussian elimination with partial pivoting, all NaN if ``a`` is singular to working precision."""
+     m = a.shape[0]
+     a = a.copy()
+     x = b.copy()
++    tol = 1e-7 * np.abs(np.diag(a))
+     for k in range(m):
+         piv = k + np.argmax(np.abs(a[k:, k]))
+-        if a[piv, k] == 0.0:
++        if not np.abs(a[piv, k]) > tol[k]:
+             return np.full(m, np.nan)
+         for j in range(m):
+             a[k, j], a[piv, j] = a[piv, j], a[k, j]
+@@ -484,9 +485,14 @@ def _hlm_pvalue_per_row(
+     if covariates.shape[0] != n:
+         raise ValueError("covariates rows must match score length")
+     labels, groups = np.unique(np.asarray(sample_groups), return_inverse=True)
+-    fixed = np.column_stack(
+-        [np.ones(n), pd.get_dummies(covariates, drop_first=True, dtype=np.float64).to_numpy(dtype=np.float64), score]
+-    )
++    dummies = np.empty((n, 0))
++    if covariates.shape[1]:
++        covariates = covariates.apply(
++            lambda col: col.cat.remove_unused_categories() if isinstance(col.dtype, pd.CategoricalDtype) else col
++        )
++        dummies = pd.get_dummies(covariates, drop_first=True, dtype=np.float64).to_numpy(dtype=np.float64)
++        dummies = dummies[:, np.ptp(dummies, axis=0) > 0]
++    fixed = np.column_stack([np.ones(n), dummies, score])
+     estimates = np.full(expression.shape[0], np.nan)
+     std_errors = np.full(expression.shape[0], np.nan)
+     rows = ~np.isnan(expression).any(axis=1) & ~np.isnan(fixed).any()
+@@ -530,7 +536,7 @@ class Dialogue:
+         use_tme_qc: If True, add ``tme_qc`` (partner-celltype per-sample average of ``cell_quality_key``) as an additional HLM covariate (R default).
+         additional_covariates: Extra ``adata.obs`` columns to include as HLM covariates.
+         min_cells_per_sample: Minimum cells per sample required for a cell type to be considered in the pair-level HLM (R's ``abn.c``).
+-        random_state: Reproducibility seed for permutation tests and PMD permute search.
++        random_state: Reproducibility seed for the permutation tests.
+     """
+ 
+     def __init__(
+diff --git a/tests/tools/test_dialogue.py b/tests/tools/test_dialogue.py
+index bfe84b05..b9642357 100644
+--- a/tests/tools/test_dialogue.py
++++ b/tests/tools/test_dialogue.py
+@@ -269,12 +269,13 @@ def test_hlm_pvalue_per_row_matches_statsmodels():
+ def test_hlm_pvalue_per_row_handles_degenerate_row():
+     n = 30
+     sample = np.repeat(["A", "B", "C"], n // 3)
+-    expression = np.zeros((2, n))
++    expression = np.full((2, n), 2.0)
+     expression[1] = np.arange(n) / n
+     covariates = pd.DataFrame({"cellQ": np.linspace(0, 1, n)})
+     score = np.linspace(-1, 1, n)
+     res = _hlm_pvalue_per_row(expression, score, covariates, sample)
+     assert res.shape == (2, 2)
++    assert res.loc["gene_0"].isna().all()
+ 
+ 
+ def _preprocess_dialogue_adata(adata: ad.AnnData) -> ad.AnnData:

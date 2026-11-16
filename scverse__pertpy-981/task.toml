@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-981"
+description = "Reject all-zero contrasts in test_contrasts"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "1a767ba7109c821ae8d0bc6937f42ddf4e80e452"
+reference = "https://github.com/scverse/pertpy/pull/981"
+source_access = "auto"
+built_at = "2026-11-15T16:43:37.210709+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:6c2a25504eb4c839db3b6192e790d2d55ca26d953acc3d11a406219637445c1c"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-05-19T10:12:58Z"
+diff_format = "unified"
+context_files = [
+    "pertpy/tools/_differential_gene_expression/_base.py",
+    "tests/tools/_differential_gene_expression/test_base.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 16
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

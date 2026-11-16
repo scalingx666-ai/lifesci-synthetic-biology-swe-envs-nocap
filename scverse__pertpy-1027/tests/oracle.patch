@@ -1,0 +1,376 @@
+diff --git a/pertpy/metadata/_cell_line.py b/pertpy/metadata/_cell_line.py
+index d8e0acff..b350bf8c 100644
+--- a/pertpy/metadata/_cell_line.py
++++ b/pertpy/metadata/_cell_line.py
+@@ -1,6 +1,5 @@
+ from __future__ import annotations
+ 
+-from pathlib import Path
+ from typing import TYPE_CHECKING, Literal
+ 
+ from pertpy._logger import logger
+@@ -13,11 +12,9 @@
+ import matplotlib.pyplot as plt
+ import numpy as np
+ import pandas as pd
+-from scanpy import settings
+ from scipy import stats
+ 
+ from pertpy._doc import _doc_params, doc_common_plot_args
+-from pertpy.data._dataloader import _download
+ 
+ from ._look_up import LookUp
+ from ._metadata import MetaData
+@@ -43,130 +40,49 @@ def __init__(self):
+ 
+     def _download_cell_line(self, cell_line_source: Literal["DepMap", "Cancerrxgene"] = "DepMap") -> None:
+         if cell_line_source == "DepMap":
+-            # Download cell line metadata from DepMap
+-            # Source: https://depmap.org/portal/download/all/ (DepMap Public 23Q4)
+-            depmap_cell_line_path = Path(settings.cachedir) / "depmap_23Q4_info.csv"
+-            if not Path(depmap_cell_line_path).exists():
+-                _download(
+-                    url="https://exampledata.scverse.org/pertpy/depmap_23Q4_info.csv",
+-                    output_file_name="depmap_23Q4_info.csv",
+-                    output_path=settings.cachedir,
+-                    block_size=4096,
+-                    is_zip=False,
+-                )
++            # DepMap Public 23Q4: https://depmap.org/portal/download/all/
++            depmap_cell_line_path = self._download_metadata("depmap_23Q4_info.csv")
+             self.depmap = pd.read_csv(depmap_cell_line_path)
+             self.depmap = self.depmap.reset_index().rename(columns={"CellLineName": "cell_line_name"})
+         else:
+-            # Download cell line metadata from The Genomics of Drug Sensitivity in Cancer Project
+-            # Source: https://www.cancerrxgene.org/celllines
+-            transformed_cancerxgene_cell_line_path = Path(settings.cachedir) / "cancerrxgene_info.csv"
+-            if not transformed_cancerxgene_cell_line_path.exists():
+-                _download(
+-                    url="https://exampledata.scverse.org/pertpy/cancerrxgene_info.csv",
+-                    output_file_name="cancerrxgene_info.csv",
+-                    output_path=settings.cachedir,
+-                    block_size=4096,
+-                    is_zip=False,
+-                )
+-            self.cancerxgene = pd.read_csv(transformed_cancerxgene_cell_line_path, index_col=0)
++            # The Genomics of Drug Sensitivity in Cancer Project: https://www.cancerrxgene.org/celllines
++            cancerxgene_cell_line_path = self._download_metadata("cancerrxgene_info.csv")
++            self.cancerxgene = pd.read_csv(cancerxgene_cell_line_path, index_col=0)
+ 
+     def _download_gene_annotation(self) -> None:
+-        # Download metadata for driver genes from DepMap.Sanger
+-        # Source: https://cellmodelpassports.sanger.ac.uk/downloads (Gene annotation)
+-        gene_annotation_file_path = Path(settings.cachedir) / "genes_info.csv"
+-        if not Path(gene_annotation_file_path).exists():
+-            _download(
+-                url="https://exampledata.scverse.org/pertpy/genes_info.csv",
+-                output_file_name="genes_info.csv",
+-                output_path=settings.cachedir,
+-                block_size=4096,
+-                is_zip=False,
+-            )
++        # Driver genes from DepMap.Sanger: https://cellmodelpassports.sanger.ac.uk/downloads (Gene annotation)
++        gene_annotation_file_path = self._download_metadata("genes_info.csv")
+         self.gene_annotation = pd.read_table(gene_annotation_file_path, delimiter=",")
+ 
+     def _download_bulk_rna(self, cell_line_source: Literal["broad", "sanger"] = "broad") -> None:
+         if cell_line_source == "sanger":
+-            # Download bulk RNA-seq data collated by the Wellcome Sanger Institute and the Broad Institute from DepMap.Sanger
+-            # Source: https://cellmodelpassports.sanger.ac.uk/downloads (Expression data)
+-            # issue: read count values contain random whitespace
+-            # solution: remove the white space and convert to int before depmap updates the metadata
+-            bulk_rna_sanger_file_path = Path(settings.cachedir) / "rnaseq_sanger_info.csv"
+-            if not Path(bulk_rna_sanger_file_path).exists():
+-                _download(
+-                    url="https://exampledata.scverse.org/pertpy/rnaseq_sanger_info.csv",
+-                    output_file_name="rnaseq_sanger_info.csv",
+-                    output_path=settings.cachedir,
+-                    block_size=4096,
+-                    is_zip=False,
+-                )
++            # Bulk RNA-seq collated by the Sanger and Broad institutes from DepMap.Sanger:
++            # https://cellmodelpassports.sanger.ac.uk/downloads (Expression data)
++            # Read counts contain random whitespace, hence the unicode dtype.
++            bulk_rna_sanger_file_path = self._download_metadata("rnaseq_sanger_info.csv")
+             self.bulk_rna_sanger = pd.read_csv(bulk_rna_sanger_file_path, index_col=0, dtype="unicode")
+         else:
+-            # Download CCLE expression data from DepMap
+-            # Source: https://depmap.org/portal/download/all/ (DepMap Public 22Q2)
+-            bulk_rna_broad_file_path = Path(settings.cachedir) / "rnaseq_depmap_info.csv"
+-            if not Path(bulk_rna_broad_file_path).exists():
+-                _download(
+-                    url="https://exampledata.scverse.org/pertpy/rnaseq_depmap_info.csv",
+-                    output_file_name="rnaseq_depmap_info.csv",
+-                    output_path=settings.cachedir,
+-                    block_size=4096,
+-                    is_zip=False,
+-                )
++            # CCLE expression data from DepMap Public 22Q2: https://depmap.org/portal/download/all/
++            bulk_rna_broad_file_path = self._download_metadata("rnaseq_depmap_info.csv")
+             self.bulk_rna_broad = pd.read_csv(bulk_rna_broad_file_path, index_col=0)
+ 
+     def _download_proteomics(self) -> None:
+-        # Download proteomics data processed by DepMap.Sanger
+-        # Source: https://cellmodelpassports.sanger.ac.uk/downloads (Proteomics)
+-        proteomics_file_path = Path(settings.cachedir) / "proteomics_info.csv"
+-        if not Path(proteomics_file_path).exists():
+-            _download(
+-                url="https://exampledata.scverse.org/pertpy/proteomics_info.csv",
+-                output_file_name="proteomics_info.csv",
+-                output_path=settings.cachedir,
+-                block_size=4096,
+-                is_zip=False,
+-            )
++        # Proteomics data processed by DepMap.Sanger: https://cellmodelpassports.sanger.ac.uk/downloads (Proteomics)
++        proteomics_file_path = self._download_metadata("proteomics_info.csv")
+         self.proteomics = pd.read_csv(proteomics_file_path, index_col=0)
+ 
+     def _download_gdsc(self, gdsc_dataset: Literal[1, 2] = 1) -> None:
+         if gdsc_dataset == 1:
+-            # Download GDSC drug response data
+-            # Source: https://www.cancerrxgene.org/downloads/bulk_download (Drug Screening - IC50s and AUC)
+-            # URL: https://cog.sanger.ac.uk/cancerrxgene/GDSC_release8.4/GDSC1_fitted_dose_response_24Jul22.xlsx
+-            drug_response_gdsc1_file_path = Path(settings.cachedir) / "gdsc1_info.csv"
+-            if not Path(drug_response_gdsc1_file_path).exists():
+-                _download(
+-                    url="https://exampledata.scverse.org/pertpy/gdsc1_info.csv",
+-                    output_file_name="gdsc1_info.csv",
+-                    output_path=settings.cachedir,
+-                    block_size=4096,
+-                    is_zip=False,
+-                )
++            # GDSC drug response (IC50s and AUC): https://www.cancerrxgene.org/downloads/bulk_download
++            drug_response_gdsc1_file_path = self._download_metadata("gdsc1_info.csv")
+             self.drug_response_gdsc1 = pd.read_csv(drug_response_gdsc1_file_path, index_col=0)
+         if gdsc_dataset == 2:
+-            drug_response_gdsc2_file_path = Path(settings.cachedir) / "gdsc2_info.csv"
+-            if not Path(drug_response_gdsc2_file_path).exists():
+-                _download(
+-                    url="https://exampledata.scverse.org/pertpy/gdsc2_info.csv",
+-                    output_file_name="gdsc2_info.csv",
+-                    output_path=settings.cachedir,
+-                    block_size=4096,
+-                    is_zip=False,
+-                )
++            drug_response_gdsc2_file_path = self._download_metadata("gdsc2_info.csv")
+             self.drug_response_gdsc2 = pd.read_csv(drug_response_gdsc2_file_path, index_col=0)
+ 
+     def _download_prism(self) -> None:
+-        # Download PRISM drug response data
+-        # Source: DepMap PRISM Repurposing 19Q4 secondary screen dose response curve parameters
+-        drug_response_prism_file_path = Path(settings.cachedir) / "prism_info.csv"
+-        if not Path(drug_response_prism_file_path).exists():
+-            _download(
+-                url="https://exampledata.scverse.org/pertpy/prism_info.csv",
+-                output_file_name="prism_info.csv",
+-                output_path=settings.cachedir,
+-                block_size=4096,
+-                is_zip=False,
+-            )
++        # DepMap PRISM Repurposing 19Q4 secondary screen dose response curve parameters
++        drug_response_prism_file_path = self._download_metadata("prism_info.csv")
+         df = pd.read_csv(
+             drug_response_prism_file_path, index_col=0, usecols=["broad_id", "depmap_id", "name", "ic50", "ec50", "auc"]
+         )
+diff --git a/pertpy/metadata/_drug.py b/pertpy/metadata/_drug.py
+index 44ff8be8..99701559 100644
+--- a/pertpy/metadata/_drug.py
++++ b/pertpy/metadata/_drug.py
+@@ -24,31 +24,13 @@ def _download_drug_annotation(
+ ) -> pd.DataFrame | Mapping[str, Mapping[str, list[str]]]:
+     if source == "chembl":
+         # Prepared in https://github.com/theislab/pertpy-datasets/blob/main/chembl_data.ipynb
+-        chembl_path = Path(settings.cachedir) / "chembl.json"
+-        if not Path(chembl_path).exists():
+-            _download(
+-                url="https://exampledata.scverse.org/pertpy/chembl.json",
+-                output_file_name="chembl.json",
+-                output_path=settings.cachedir,
+-                block_size=4096,
+-                is_zip=False,
+-            )
++        chembl_path = MetaData._download_metadata("chembl.json")
+         with chembl_path.open() as file:
+-            chembl_json = json.load(file)
+-        return chembl_json
++            return json.load(file)
+ 
+     elif source == "dgidb":
+-        dgidb_path = Path(settings.cachedir) / "dgidb.tsv"
+-        if not Path(dgidb_path).exists():
+-            _download(
+-                url="https://exampledata.scverse.org/pertpy/dgidb.tsv",
+-                output_file_name="dgidb.tsv",
+-                output_path=settings.cachedir,
+-                block_size=4096,
+-                is_zip=False,
+-            )
+-        dgidb_df = pd.read_table(dgidb_path)
+-        return dgidb_df
++        dgidb_path = MetaData._download_metadata("dgidb.tsv")
++        return pd.read_table(dgidb_path)
+ 
+     else:
+         pharmgkb_path = Path(settings.cachedir) / "pharmgkb.tsv"
+@@ -110,18 +92,10 @@ def annotate(
+         if copy:
+             adata = adata.copy()
+ 
+-        if source == "chembl":
+-            if not self.chembl.loaded:
+-                self.chembl.set()
+-            interaction = self.chembl.dataframe
+-        elif source == "dgidb":
+-            if not self.dgidb.loaded:
+-                self.dgidb.set()
+-            interaction = self.dgidb.dataframe
+-        else:
+-            if not self.pharmgkb.loaded:
+-                self.pharmgkb.set()
+-            interaction = self.pharmgkb.data
++        db = getattr(self, source)
++        if not db.loaded:
++            db.set()
++        interaction = db.data if source == "pharmgkb" else db.dataframe
+ 
+         if source != "pharmgkb":
+             exploded_df = interaction.explode("targets")
+@@ -163,12 +137,9 @@ def lookup(self) -> LookUp:
+         Returns:
+             Returns a LookUp object specific for drug annotation.
+         """
+-        if not self.chembl.loaded:
+-            self.chembl.set()
+-        if not self.dgidb.loaded:
+-            self.dgidb.set()
+-        if not self.pharmgkb.loaded:
+-            self.pharmgkb.set()
++        for db in (self.chembl, self.dgidb, self.pharmgkb):
++            if not db.loaded:
++                db.set()
+ 
+         return LookUp(
+             type="drug",
+diff --git a/pertpy/metadata/_metadata.py b/pertpy/metadata/_metadata.py
+index 3c5a9e8d..b81b7943 100644
+--- a/pertpy/metadata/_metadata.py
++++ b/pertpy/metadata/_metadata.py
+@@ -1,8 +1,12 @@
+ from __future__ import annotations
+ 
++from pathlib import Path
+ from typing import TYPE_CHECKING, Literal
+ 
++from scanpy import settings
++
+ from pertpy._logger import logger
++from pertpy.data._dataloader import _download
+ 
+ if TYPE_CHECKING:
+     from collections.abc import Sequence
+@@ -11,6 +15,21 @@
+ class MetaData:
+     """Superclass for pertpy's MetaData components."""
+ 
++    _BASE_URL = "https://exampledata.scverse.org/pertpy"
++
++    @staticmethod
++    def _download_metadata(file_name: str) -> Path:
++        """Download a metadata file into scanpy's cache directory if absent and return its path."""
++        path = Path(settings.cachedir) / file_name
++        if not path.exists():
++            _download(
++                url=f"{MetaData._BASE_URL}/{file_name}",
++                output_file_name=file_name,
++                output_path=settings.cachedir,
++                block_size=4096,
++            )
++        return path
++
+     def _warn_unmatch(
+         self,
+         total_identifiers: int,
+diff --git a/pertpy/metadata/_moa.py b/pertpy/metadata/_moa.py
+index 13cbc097..58755b0a 100644
+--- a/pertpy/metadata/_moa.py
++++ b/pertpy/metadata/_moa.py
+@@ -1,13 +1,9 @@
+ from __future__ import annotations
+ 
+-from pathlib import Path
+ from typing import TYPE_CHECKING
+ 
+ import numpy as np
+ import pandas as pd
+-from scanpy import settings
+-
+-from pertpy.data._dataloader import _download
+ 
+ from ._look_up import LookUp
+ from ._metadata import MetaData
+@@ -23,17 +19,8 @@ def __init__(self):
+         self.clue = None
+ 
+     def _download_clue(self) -> None:
+-        clue_path = Path(settings.cachedir) / "repurposing_drugs_20200324.txt"
+-        if not Path(clue_path).exists():
+-            _download(
+-                url="https://exampledata.scverse.org/pertpy/repurposing_drugs_20200324.txt",
+-                output_file_name="repurposing_drugs_20200324.txt",
+-                output_path=settings.cachedir,
+-                block_size=4096,
+-                is_zip=False,
+-            )
+-        self.clue = pd.read_csv(clue_path, sep="	", skiprows=9)
+-        self.clue = self.clue[["pert_iname", "moa", "target"]]
++        clue_path = self._download_metadata("repurposing_drugs_20200324.txt")
++        self.clue = pd.read_csv(clue_path, sep="	", skiprows=9)[["pert_iname", "moa", "target"]]
+ 
+     def annotate(
+         self,
+diff --git a/tests/metadata/test_metadata.py b/tests/metadata/test_metadata.py
+new file mode 100644
+index 00000000..6764587c
+--- /dev/null
++++ b/tests/metadata/test_metadata.py
+@@ -0,0 +1,40 @@
++from pathlib import Path
++
++import pytest
++from scanpy import settings
++
++from pertpy.metadata._metadata import MetaData
++
++
++@pytest.fixture
++def cachedir(tmp_path):
++    original = settings.cachedir
++    settings.cachedir = tmp_path
++    yield tmp_path
++    settings.cachedir = original
++
++
++def test_download_metadata_skips_when_cached(cachedir, monkeypatch):
++    cached = cachedir / "depmap_23Q4_info.csv"
++    cached.write_text("already here")
++
++    calls = []
++    monkeypatch.setattr("pertpy.metadata._metadata._download", lambda **kwargs: calls.append(kwargs))
++
++    path = MetaData._download_metadata("depmap_23Q4_info.csv")
++
++    assert path == cached
++    assert calls == []
++
++
++def test_download_metadata_fetches_from_base_url_when_missing(cachedir, monkeypatch):
++    calls = []
++    monkeypatch.setattr("pertpy.metadata._metadata._download", lambda **kwargs: calls.append(kwargs))
++
++    path = MetaData._download_metadata("gdsc1_info.csv")
++
++    assert path == cachedir / "gdsc1_info.csv"
++    assert len(calls) == 1
++    assert calls[0]["url"] == "https://exampledata.scverse.org/pertpy/gdsc1_info.csv"
++    assert calls[0]["output_file_name"] == "gdsc1_info.csv"
++    assert Path(calls[0]["output_path"]) == cachedir

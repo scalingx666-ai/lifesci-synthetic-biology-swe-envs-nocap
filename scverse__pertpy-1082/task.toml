@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1082"
+description = "Add signature reversal scoring to enrichment"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "61428d5a87aa35a2126f189fd5e2cd9cf0a9dc2f"
+reference = "https://github.com/scverse/pertpy/pull/1082"
+source_access = "auto"
+built_at = "2026-11-15T16:40:57.125280+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:d5614b1405530ff4111b0cb9113713fd3b9c66980c2fe6f4edc7326a0f342088"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-08-30T09:07:24Z"
+diff_format = "unified"
+context_files = [
+    "docs/api/tools_index.md",
+    "src/pertpy/tools/_enrichment.py",
+    "tests/tools/test_enrichment.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 526
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

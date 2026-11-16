@@ -1,0 +1,925 @@
+diff --git a/docs/api/tools_index.md b/docs/api/tools_index.md
+index 6779b5b1..c61847a0 100644
+--- a/docs/api/tools_index.md
++++ b/docs/api/tools_index.md
+@@ -160,6 +160,9 @@ mdata["rna"].obs["Status"] = (
+ )
+ milo.da_nhoods(mdata, design="~Status")
+ 
++# Repeated measurements of the same donor are accounted for with a random intercept
++milo.da_nhoods(mdata, design="~ Status + (1 | patient_id)")
++
+ # Group differentially abundant neighbourhoods and find their marker genes
+ milo.build_nhood_graph(mdata)
+ milo.group_nhoods(mdata)
+diff --git a/docs/tutorials/notebooks b/docs/tutorials/notebooks
+index a184fdcd..80459160 160000
+--- a/docs/tutorials/notebooks
++++ b/docs/tutorials/notebooks
+@@ -1 +1 @@
+-Subproject commit a184fdcd92e0198b12c7dec62ad0344a5c205932
++Subproject commit 80459160cf959a0e6c1837c67b0140ba1f1ca425
+diff --git a/src/pertpy/tools/_milo.py b/src/pertpy/tools/_milo.py
+index 3a282fb4..45550b18 100644
+--- a/src/pertpy/tools/_milo.py
++++ b/src/pertpy/tools/_milo.py
+@@ -20,6 +20,7 @@
+ from pertpy._doc import _doc_params, doc_common_plot_args
+ from pertpy._logger import logger
+ from pertpy._types import CSBase, cast_frame, cast_matrix
++from pertpy.tools._milo_glmm import fit_nb_glmm_nhoods, parse_random_effects, random_effect_matrices
+ 
+ if TYPE_CHECKING:
+     from collections.abc import Collection, Sequence
+@@ -32,6 +33,23 @@
+ from sklearn.metrics.pairwise import euclidean_distances
+ 
+ 
++def _contrast_vector(columns: list[str], model_contrasts: str) -> np.ndarray:
++    """Turn an R style contrast such as ``conditionB-conditionA`` into weights over formulaic design columns.
++
++    Formulaic names a coefficient ``condition[T.B]`` where R names it ``conditionB``, so the columns are matched on their R spelling.
++    """
++    r_names = {column.replace("[T.", "").replace("[", "").replace("]", ""): column for column in columns}
++    weights = pd.Series(0.0, index=columns)
++    for sign, term in re.findall(r"([+-]?)\s*([^+-]+)", model_contrasts):
++        name = term.strip()
++        if name not in r_names:
++            raise ValueError(
++                f"Contrast term {name!r} does not match any coefficient of the design. Available: {sorted(r_names)}."
++            )
++        weights[r_names[name]] += -1.0 if sign == "-" else 1.0
++    return weights.to_numpy()
++
++
+ def _weighted_bh(pvalues: np.ndarray, weights: np.ndarray) -> np.ndarray:
+     """Density-weighted Benjamini-Hochberg adjustment (Cydar/Milo style).
+ 
+@@ -291,21 +309,30 @@ def da_nhoods(
+         subset_samples: list[str] | None = None,
+         add_intercept: bool = True,
+         feature_key: str | None = "rna",
++        reml: bool = True,
++        max_iter: int = 50,
++        tol: float = 1e-5,
+         solver: Literal["edger", "pydeseq2"] = "pydeseq2",
+     ):
+         """Performs differential abundance testing on neighbourhoods using QLF test implementation as implemented in edgeR.
+ 
++        A random intercept in the design switches to a negative binomial mixed model, which accounts for repeated measurements of the same donor, batch or timepoint instead of treating every sample as independent.
++
+         Args:
+             mdata: MuData object
+             design: Formula for the test, following glm syntax from R (e.g. '~ condition').
+                     Terms should be columns in `milo_mdata[feature_key].obs`.
++                    Random intercepts follow the `(1 | variable)` syntax of R Milo (e.g. '~ condition + (1 | donor)') and fit a mixed model.
+             model_contrasts: A string vector that defines the contrasts used to perform DA testing, following glm syntax from R (e.g. "conditionDisease - conditionControl").
+                              If no contrast is specified (default), then the last categorical level in condition of interest is used as the test group.
+             subset_samples: subset of samples (obs in `milo_mdata['milo']`) to use for the test.
+             add_intercept: whether to include an intercept in the model. If False, this is equivalent to adding + 0 in the design formula.
+                 When model_contrasts is specified, this is set to False by default.
+             feature_key: If input data is MuData, specify key to cell-level AnnData object.
+-            solver: The solver to fit the model to.
++            reml: Whether a mixed model estimates its variance components by restricted maximum likelihood rather than maximum likelihood.
++            max_iter: Maximum number of iterations of a mixed model fit.
++            tol: Convergence tolerance of a mixed model fit.
++            solver: The solver to fit the model to, ignored for a mixed model.
+                 The "edger" solver requires R, rpy2 and edgeR to be installed and is the closest to the R implementation.
+                 The "pydeseq2" requires pydeseq2 to be installed.
+                 It is still very comparable to the "edger" solver but might be a bit slower.
+@@ -317,6 +344,9 @@ def da_nhoods(
+             - `SpatialFDR` stores the p-value adjusted for multiple testing to limit the false discovery rate,
+                 calculated with weighted Benjamini-Hochberg procedure
+ 
++            For a mixed model, `SE`, `tvalue`, one `<variable>_variance` per random intercept, `Dispersion`,
++            `Logliklihood` and `Converged` are added as well.
++
+         Examples:
+             >>> import pertpy as pt
+             >>> import scanpy as sc
+@@ -338,7 +368,9 @@ def da_nhoods(
+             raise
+         adata = mdata[feature_key]
+ 
+-        covariates = [x.strip(" ") for x in set(re.split("\\+|\\*", design.lstrip("~ ")))]
++        fixed_design, random_effects = parse_random_effects(design)
++        covariates = [x.strip(" ") for x in set(re.split("\\+|\\*", fixed_design.lstrip("~ ")))]
++        covariates = [x for x in covariates if x not in {"", "0", "1"}] + random_effects
+ 
+         # Add covariates used for testing to sample_adata.var
+         sample_col = sample_adata.uns["sample_col"]
+@@ -380,15 +412,51 @@ def da_nhoods(
+         # Subset samples
+         if subset_samples is not None:
+             keep_smp = keep_smp & sample_adata.obs_names.isin(subset_samples)
+-            design_df = design_df[keep_smp]
+-            for i, e in enumerate(design_df.columns):
+-                if design_df.dtypes[i].name == "category":
+-                    design_df[e] = design_df[e].cat.remove_unused_categories()
+ 
+         # Filter out nhoods with zero counts (they can appear after sample filtering)
+         keep_nhoods = count_mat[:, keep_smp].sum(1) > 0
+ 
+-        if solver == "edger":
++        design_df = design_df[keep_smp].copy()
++        for column in design_df.columns:
++            if isinstance(design_df[column].dtype, pd.CategoricalDtype):
++                design_df[column] = design_df[column].cat.remove_unused_categories()
++
++        if random_effects:
++            if find_spec("formulaic_contrasts") is None:
++                raise ImportError(
++                    "formulaic-contrasts is required for mixed models. Install with: pip install pertpy[de]"
++                )
++            from formulaic_contrasts import FormulaicContrasts
++
++            fixed = fixed_design if add_intercept and model_contrasts is None else fixed_design + " + 0"
++            design_matrix = FormulaicContrasts(design_df, fixed).design_matrix
++            counts_filtered = count_mat[np.ix_(keep_nhoods, keep_smp)]
++            lib_size_filtered = lib_size[keep_smp]
++
++            res = fit_nb_glmm_nhoods(
++                counts_filtered,
++                np.asarray(design_matrix, dtype=float),
++                random_effect_matrices(design_df, random_effects),
++                np.log(lib_size_filtered),
++                contrast=_contrast_vector(list(design_matrix.columns), model_contrasts)
++                if model_contrasts is not None
++                else None,
++                reml=reml,
++                max_iter=max_iter,
++                tol=tol,
++            )
++            fitted = res["logFC"].notna()
++            if separated := int((~fitted).sum()):
++                logger.warning(
++                    f"{separated} out of {len(res)} neighbourhoods have a group without any cells, so their fold change "
++                    "is not identifiable and is reported as NaN."
++                )
++            if not_converged := int((~res["Converged"] & fitted).sum()):
++                logger.warning(
++                    f"{not_converged} out of {int(fitted.sum())} fitted neighbourhoods did not converge; "
++                    "consider increasing `max_iter`."
++                )
++        elif solver == "edger":
+             # Set up rpy2 to run edgeR
+             edgeR, limma, stats, base = self._setup_rpy2()
+ 
+@@ -474,7 +542,7 @@ def da_nhoods(
+             warnings.filterwarnings("always", message=".*(alpha).*")
+ 
+             counts_filtered = count_mat[np.ix_(keep_nhoods, keep_smp)]
+-            design_df_filtered = design_df.iloc[keep_smp].copy()
++            design_df_filtered = design_df.copy()
+ 
+             design_df_filtered = design_df_filtered.astype(
+                 dict.fromkeys(design_df_filtered.select_dtypes(exclude=["number"]).columns, "category")
+@@ -537,9 +605,16 @@ def da_nhoods(
+             res = res[["logCPM", "logFC", "PValue", "FDR"]]
+ 
+         res.index = sample_adata.var_names[keep_nhoods]
+-        if any(col in sample_adata.var.columns for col in res.columns):
+-            sample_adata.var = sample_adata.var.drop(res.columns, axis=1)  # type: ignore[union-attr]
++        written = [*res.columns, "SpatialFDR"]
++        stale = [
++            col
++            for col in dict.fromkeys([*sample_adata.uns.get("da_nhoods_columns", []), *written])
++            if col in sample_adata.var.columns
++        ]
++        if stale:
++            sample_adata.var = sample_adata.var.drop(columns=stale)  # type: ignore[union-attr]
+         sample_adata.var = pd.concat([sample_adata.var, res], axis=1)  # type: ignore[call-overload]
++        sample_adata.uns["da_nhoods_columns"] = written
+ 
+         self._graph_spatial_fdr(sample_adata)  # type: ignore[arg-type]
+ 
+@@ -614,6 +689,12 @@ def de_nhoods(
+                     "sample_col not found in mdata['milo'].uns -- run count_nhoods() first or pass `sample_col`."
+                 )
+ 
++        if parse_random_effects(design)[1]:
++            raise ValueError(
++                "Random effects are not supported by de_nhoods, which fits one model per gene and neighbourhood. "
++                "Use da_nhoods for a mixed model of cell abundance, or drop the random effect term to test expression."
++            )
++
+         covariates = [c.strip() for c in re.split(r"\+|\*|:", design.lstrip("~ "))]
+         covariates = [c for c in covariates if c and c not in {"0", "1"}]
+         missing = [c for c in covariates + [sample_col] if c not in adata.obs.columns]
+diff --git a/src/pertpy/tools/_milo_glmm.py b/src/pertpy/tools/_milo_glmm.py
+new file mode 100644
+index 00000000..91f595d8
+--- /dev/null
++++ b/src/pertpy/tools/_milo_glmm.py
+@@ -0,0 +1,422 @@
++from __future__ import annotations
++
++import re
++from typing import TYPE_CHECKING, NamedTuple
++
++import numpy as np
++import pandas as pd
++from scipy import stats
++from scipy.linalg import cho_factor, cho_solve
++from scipy.optimize import brentq, minimize_scalar
++from scipy.special import gammaln
++
++if TYPE_CHECKING:
++    from collections.abc import Sequence
++
++_RANDOM_EFFECT = re.compile(r"\(\s*1\s*\|\s*([^)]+?)\s*\)")
++
++
++def parse_random_effects(design: str) -> tuple[str, list[str]]:
++    """Split a formula into its fixed effects part and the variables entering as random intercepts.
++
++    Random intercepts follow the ``(1 | variable)`` syntax of lme4 and R Milo.
++
++    Returns:
++        The formula with the random effect terms removed and the random intercept variables.
++    """
++    if re.search(r"\|", _RANDOM_EFFECT.sub("", design)):
++        raise ValueError(f"{design!r} is an invalid formula for random effects. Use the '(1 | variable)' format.")
++
++    random_effects = [match.group(1).strip() for match in _RANDOM_EFFECT.finditer(design)]
++    fixed = _RANDOM_EFFECT.sub("", design)
++    fixed = re.sub(r"\+\s*(?=\+|$)", "", fixed).strip().rstrip("+").strip()
++    if fixed in {"", "~"}:
++        fixed = "~ 1"
++    return fixed, random_effects
++
++
++def random_effect_matrices(obs: pd.DataFrame, random_effects: Sequence[str]) -> list[tuple[str, np.ndarray]]:
++    """Build one indicator matrix of shape samples x levels per random intercept variable."""
++    matrices = []
++    for variable in random_effects:
++        if variable not in obs.columns:
++            raise ValueError(f"Random effect variable {variable!r} is not a column of the sample metadata.")
++        dummies = pd.get_dummies(obs[variable].astype("category"), drop_first=False)
++        if dummies.shape[1] < 2:
++            raise ValueError(
++                f"Random effect variable {variable!r} has a single level, which cannot be told apart from the intercept."
++            )
++        matrices.append((variable, dummies.to_numpy(dtype=float)))
++    return matrices
++
++
++class GLMMFit(NamedTuple):
++    """Result of fitting a negative binomial GLMM to the counts of a single neighbourhood."""
++
++    beta: np.ndarray
++    se: np.ndarray
++    covariance: np.ndarray
++    fitted: np.ndarray
++    sigma: np.ndarray
++    dispersion: float
++    loglik: float
++    converged: bool
++
++
++def _poisson_means(y: np.ndarray, X: np.ndarray, offset: np.ndarray) -> np.ndarray:
++    """Fit a Poisson GLM with a log link by iteratively reweighted least squares."""
++    mu = np.maximum(y.astype(float), 0.1)
++    for _ in range(25):
++        working = np.log(mu) - offset + (y - mu) / mu
++        coef, *_ = np.linalg.lstsq(X * mu[:, None] ** 0.5, working * mu**0.5, rcond=None)
++        new_mu = np.exp(np.clip(offset + X @ coef, -30, 30))
++        if np.allclose(new_mu, mu, rtol=1e-6):
++            return new_mu
++        mu = new_mu
++    return mu
++
++
++def _dispersion_from_means(y: np.ndarray, mu: np.ndarray, df: float) -> float:
++    """Solve for the dispersion at which the negative binomial Pearson statistic equals its degrees of freedom."""
++    squared_error = (y - mu) ** 2
++
++    def pearson(dispersion: float) -> float:
++        return float(np.sum(squared_error / (mu + dispersion * mu**2)) - df)
++
++    if pearson(0.0) <= 0:
++        return 0.0
++    upper = 1.0
++    while pearson(upper) > 0 and upper < 1e6:
++        upper *= 10
++    return float(brentq(pearson, 0.0, upper)) if pearson(upper) <= 0 else 1e6
++
++
++def _adjusted_profile_dispersion(
++    y: np.ndarray,
++    mu: np.ndarray,
++    X: np.ndarray,
++    matrices: Sequence[np.ndarray],
++    sigma: np.ndarray,
++) -> float:
++    """Dispersion maximising the Cox-Reid adjusted profile likelihood at the fitted means.
++
++    Profiling out the coefficients biases the dispersion downwards by an amount that depends on how many of them there are, which is why a moment estimator drifts with the size of the design.
++    Subtracting half the log determinant of the information of the coefficients removes that drift, and the information is the penalised one of the mixed model so that the random effects count for as much as they were shrunk towards zero.
++    """
++    design = np.column_stack([X, *matrices])
++    penalty = np.zeros(design.shape[1])
++    start = X.shape[1]
++    for matrix, variance in zip(matrices, sigma, strict=True):
++        penalty[start : start + matrix.shape[1]] = 1.0 / max(float(variance), 1e-8)
++        start += matrix.shape[1]
++
++    def negative_adjusted_loglik(log_dispersion: float) -> float:
++        dispersion = float(np.exp(log_dispersion))
++        size = 1.0 / dispersion
++        loglik = float(
++            np.sum(
++                gammaln(y + size)
++                - gammaln(size)
++                - gammaln(y + 1)
++                + size * np.log(size / (size + mu))
++                + y * np.log(np.maximum(mu, 1e-12) / (size + mu))
++            )
++        )
++        weights = mu / (1.0 + dispersion * mu)
++        sign, logdet = np.linalg.slogdet(design.T @ (design * weights[:, None]) + np.diag(penalty))
++        return -(loglik - 0.5 * logdet) if sign > 0 else np.inf
++
++    best = minimize_scalar(negative_adjusted_loglik, bounds=(np.log(1e-6), np.log(1e3)), method="bounded")
++    return float(np.exp(best.x))
++
++
++def has_separation(y: np.ndarray, X: np.ndarray) -> bool:
++    """Check whether the counts are completely separated by a column of the model matrix.
++
++    A neighbourhood in which every sample of one group has zero counts has no finite maximum likelihood estimate, so it is reported as not converged instead of as an arbitrarily large fold change.
++    """
++    if not np.any(y > 0):
++        return True
++    return any(
++        not np.any(y[mask] > 0) or not np.any(y[~mask] > 0)
++        for mask in (X[:, column] != 0 for column in range(X.shape[1]))
++        if 0 < mask.sum() < len(y)
++    )
++
++
++def between_within_df(
++    X: np.ndarray, random_effects: Sequence[tuple[str, np.ndarray]], contrast: np.ndarray | None = None
++) -> int:
++    """Degrees of freedom for the t-test on ``contrast``, following the between-within rule.
++
++    A contrast that is constant within every level of a random intercept is only informed by as many independent units as there are levels, so testing it against the number of samples treats repeated measurements as independent and is anti-conservative.
++    """
++    n, p = X.shape
++    tested = X[:, -1] if contrast is None else X @ contrast
++    between = [
++        Z.shape[1]
++        for _, Z in random_effects
++        if all(np.ptp(tested[mask]) == 0 for mask in (Z[:, level] != 0 for level in range(Z.shape[1])) if mask.any())
++    ]
++    if between:
++        return max(min(between) - p, 1)
++    return max(n - sum(Z.shape[1] for _, Z in random_effects) - p + 1, 1)
++
++
++def fit_nb_glmm(
++    y: np.ndarray,
++    X: np.ndarray,
++    random_effects: Sequence[tuple[str, np.ndarray]],
++    offset: np.ndarray,
++    *,
++    dispersion: float | None = None,
++    reml: bool = True,
++    max_iter: int = 50,
++    tol: float = 1e-5,
++) -> GLMMFit:
++    """Fit a negative binomial mixed model with random intercepts by pseudo-likelihood.
++
++    Each iteration linearises the negative binomial likelihood into a working response, solves the resulting weighted mixed model for the fixed effects and the best linear unbiased predictors, and updates the variance components by Fisher scoring, as R Milo's pseudo-likelihood solver does.
++
++    Args:
++        y: Counts of one neighbourhood across samples.
++        X: Fixed effects model matrix.
++        random_effects: Indicator matrix per random intercept variable.
++        offset: Log offset per sample.
++        dispersion: Negative binomial dispersion. Estimated from the data if None.
++        reml: Whether to estimate the variance components by restricted maximum likelihood rather than maximum likelihood.
++        max_iter: Maximum number of pseudo-likelihood iterations.
++        tol: Convergence tolerance on the fixed effects and variance components.
++    """
++    matrices = [Z for _, Z in random_effects]
++    return _fit_nb_glmm(
++        y,
++        X,
++        matrices,
++        [Z @ Z.T for Z in matrices],
++        offset,
++        dispersion=dispersion,
++        reml=reml,
++        max_iter=max_iter,
++        tol=tol,
++    )
++
++
++def _fit_nb_glmm(
++    y: np.ndarray,
++    X: np.ndarray,
++    matrices: Sequence[np.ndarray],
++    zz: Sequence[np.ndarray],
++    offset: np.ndarray,
++    *,
++    dispersion: float | None,
++    reml: bool,
++    max_iter: int,
++    tol: float,
++) -> GLMMFit:
++    """Fit one neighbourhood, reporting a neighbourhood whose variance matrix cannot be factorised as not converged.
++
++    One pathological neighbourhood should not abort a run over thousands of them.
++    """
++    try:
++        return _fit_nb_glmm_core(
++            y, X, matrices, zz, offset, dispersion=dispersion, reml=reml, max_iter=max_iter, tol=tol
++        )
++    except np.linalg.LinAlgError:
++        return GLMMFit(
++            beta=np.full(X.shape[1], np.nan),
++            se=np.full(X.shape[1], np.nan),
++            covariance=np.full((X.shape[1], X.shape[1]), np.nan),
++            fitted=np.full(len(y), np.nan),
++            sigma=np.full(len(matrices), np.nan),
++            dispersion=np.nan,
++            loglik=np.nan,
++            converged=False,
++        )
++
++
++def _fit_nb_glmm_core(
++    y: np.ndarray,
++    X: np.ndarray,
++    matrices: Sequence[np.ndarray],
++    zz: Sequence[np.ndarray],
++    offset: np.ndarray,
++    *,
++    dispersion: float | None,
++    reml: bool,
++    max_iter: int,
++    tol: float,
++) -> GLMMFit:
++    """Fit one neighbourhood, reusing the outer products of the random effect matrices across neighbourhoods."""
++    y = np.asarray(y, dtype=float)
++    n, p = X.shape
++    residual_df = max(n - p, 1)
++
++    def pseudo_likelihood(
++        dispersion: float, start_from: tuple | None = None
++    ) -> tuple[np.ndarray, np.ndarray, list[np.ndarray], np.ndarray, bool]:
++        size = np.inf if dispersion <= 0 else 1.0 / dispersion
++        if start_from is None:
++            beta, *_ = np.linalg.lstsq(X, np.log(y + 1) - offset, rcond=None)
++            start = np.log(y + 1) - offset - X @ beta
++            sigma = np.full(len(matrices), max(float(start @ start) / residual_df, 1e-3))
++            u = [np.zeros(Z.shape[1]) for Z in matrices]
++        else:
++            beta, sigma, u = start_from
++        converged = False
++
++        for _ in range(max_iter):
++            eta = offset + X @ beta + sum((Z @ u_k for Z, u_k in zip(matrices, u, strict=True)), np.zeros(n))
++            mu = np.exp(np.clip(eta, -30, 30))
++            weights = np.maximum(mu if np.isinf(size) else mu / (1.0 + mu / size), 1e-8)
++            working = eta - offset + (y - mu) / mu
++
++            V = sum((s * m for s, m in zip(sigma, zz, strict=True)), np.diag(1.0 / weights))
++            chol = cho_factor(V, lower=True)
++
++            solved = cho_solve(chol, np.column_stack([X, *matrices]))
++            v_inv_x = solved[:, :p]
++
++            xtvx_inv = np.linalg.pinv(X.T @ v_inv_x)
++            new_beta = xtvx_inv @ (v_inv_x.T @ working)
++
++            resid = working - X @ new_beta
++            v_inv_resid = cho_solve(chol, resid)
++            new_u = [s * (Z.T @ v_inv_resid) for s, Z in zip(sigma, matrices, strict=True)]
++
++            stacked = np.column_stack([v_inv_resid, solved[:, p:]])
++            if reml:
++                stacked = stacked - v_inv_x @ (xtvx_inv @ (X.T @ stacked))
++            projected = stacked[:, 0]
++            p_z = np.split(stacked[:, 1:], np.cumsum([Z.shape[1] for Z in matrices])[:-1], axis=1)
++
++            score = np.array(
++                [
++                    -0.5 * float(np.sum(b * Z)) + 0.5 * float((Z.T @ projected) @ (Z.T @ projected))
++                    for b, Z in zip(p_z, matrices, strict=True)
++                ]
++            )
++            information = np.array(
++                [
++                    [
++                        0.5 * float(np.sum((Z_k.T @ b_l) * (Z_l.T @ b_k).T))
++                        for b_l, Z_l in zip(p_z, matrices, strict=True)
++                    ]
++                    for b_k, Z_k in zip(p_z, matrices, strict=True)
++                ]
++            )
++            new_sigma = np.maximum(sigma + np.linalg.pinv(information) @ score, 1e-8)
++
++            delta = max(np.max(np.abs(new_beta - beta)), np.max(np.abs(new_sigma - sigma)))
++            beta, sigma, u = new_beta, new_sigma, new_u
++            if delta < tol:
++                converged = True
++                break
++
++        eta = offset + X @ beta + sum((Z @ u_k for Z, u_k in zip(matrices, u, strict=True)), np.zeros(n))
++        return beta, sigma, u, np.exp(np.clip(eta, -30, 30)), converged
++
++    warm_start = None
++    if dispersion is None:
++        dispersion = _dispersion_from_means(y, _poisson_means(y, X, offset), residual_df)
++        for _ in range(4):
++            beta, sigma, u, fitted_mean, _ = pseudo_likelihood(dispersion, warm_start)
++            warm_start = (beta, sigma, u)
++            refined = _adjusted_profile_dispersion(y, fitted_mean, X, matrices, sigma)
++            if abs(np.log1p(refined) - np.log1p(dispersion)) < 1e-3:
++                dispersion = refined
++                break
++            dispersion = refined
++
++    beta, sigma, u, mu, converged = pseudo_likelihood(dispersion, warm_start)
++
++    size = np.inf if dispersion <= 0 else 1.0 / dispersion
++    weights = np.maximum(mu if np.isinf(size) else mu / (1.0 + mu / size), 1e-8)
++    working = np.log(mu) - offset + (y - mu) / mu
++    V = sum((s * m for s, m in zip(sigma, zz, strict=True)), np.diag(1.0 / weights))
++    chol = cho_factor(V, lower=True)
++    xtvx = X.T @ cho_solve(chol, X)
++    covariance = np.linalg.pinv(xtvx)
++    se = np.sqrt(np.maximum(np.diag(covariance), 0))
++
++    resid = working - X @ beta
++    logdet = 2.0 * float(np.sum(np.log(np.abs(np.diag(chol[0])))))
++    loglik = -0.5 * (logdet + float(resid @ cho_solve(chol, resid)) + n * np.log(2 * np.pi))
++    if reml:
++        loglik -= 0.5 * np.linalg.slogdet(xtvx)[1]
++
++    return GLMMFit(
++        beta=beta,
++        se=se,
++        covariance=covariance,
++        fitted=mu,
++        sigma=sigma,
++        dispersion=float(dispersion),
++        loglik=float(loglik),
++        converged=converged,
++    )
++
++
++def fit_nb_glmm_nhoods(
++    counts: np.ndarray,
++    X: np.ndarray,
++    random_effects: Sequence[tuple[str, np.ndarray]],
++    offset: np.ndarray,
++    *,
++    contrast: np.ndarray | None = None,
++    reml: bool = True,
++    max_iter: int = 50,
++    tol: float = 1e-5,
++) -> pd.DataFrame:
++    """Fit :func:`fit_nb_glmm` to every neighbourhood and assemble the results like R Milo does.
++
++    The reported log fold change is ``contrast`` applied to the fixed effects, defaulting to the last column of the model matrix, which is the coefficient the edgeR solver tests.
++    Its p-value comes from a t-test whose degrees of freedom follow :func:`between_within_df`.
++    """
++    library_size = counts.sum(axis=0)
++    logcpm = np.log2(np.mean(counts / np.where(library_size > 0, library_size, 1), axis=1) * 1e6 + 1e-12)
++
++    weights = np.zeros(X.shape[1]) if contrast is None else np.asarray(contrast, dtype=float)
++    if contrast is None:
++        weights[-1] = 1.0
++    df = between_within_df(X, random_effects, weights)
++    matrices = [Z for _, Z in random_effects]
++    zz = [Z @ Z.T for Z in matrices]
++    records = []
++    for nhood in range(counts.shape[0]):
++        y = counts[nhood].astype(float)
++        if has_separation(y, X):
++            records.append(
++                {
++                    "logFC": np.nan,
++                    "SE": np.nan,
++                    "tvalue": np.nan,
++                    "PValue": np.nan,
++                    **{f"{name}_variance": np.nan for name, _ in random_effects},
++                    "Dispersion": np.nan,
++                    "Logliklihood": np.nan,
++                    "Converged": False,
++                }
++            )
++            continue
++
++        fit = _fit_nb_glmm(y, X, matrices, zz, offset, dispersion=None, reml=reml, max_iter=max_iter, tol=tol)
++        estimate = float(weights @ fit.beta)
++        standard_error = float(np.sqrt(max(weights @ fit.covariance @ weights, 0)))
++        t_value = estimate / standard_error if standard_error > 0 else np.nan
++        records.append(
++            {
++                "logFC": estimate,
++                "SE": standard_error,
++                "tvalue": t_value,
++                "PValue": 2 * stats.t.sf(abs(t_value), df),
++                **{f"{name}_variance": value for (name, _), value in zip(random_effects, fit.sigma, strict=True)},
++                "Dispersion": fit.dispersion,
++                "Logliklihood": fit.loglik,
++                "Converged": fit.converged,
++            }
++        )
++
++    res = pd.DataFrame.from_records(records)
++    res.insert(1, "logCPM", logcpm)
++    return res
+diff --git a/tests/tools/test_milo.py b/tests/tools/test_milo.py
+index e77c8ddc..38582d40 100644
+--- a/tests/tools/test_milo.py
++++ b/tests/tools/test_milo.py
+@@ -216,6 +216,89 @@ def test_da_nhoods_default_contrast(da_nhoods_mdata, milo, solver):
+     assert np.corrcoef(contr_results["logFC"], default_results["logFC"])[0, 1] > 0.99
+ 
+ 
++@pytest.mark.skipif(find_spec("formulaic_contrasts") is None, reason="formulaic-contrasts not available")
++def test_da_nhoods_glmm(da_nhoods_mdata, milo):
++    mdata = da_nhoods_mdata.copy()
++    milo.da_nhoods(mdata, design="~ condition + (1 | replicate)")
++    var = mdata["milo"].var
++
++    for column in ("logFC", "SE", "tvalue", "PValue", "replicate_variance", "Converged", "SpatialFDR"):
++        assert column in var.columns
++
++    fitted = var["logFC"].notna()
++    assert fitted.any()
++    assert var.loc[fitted, "Converged"].mean() > 0.9
++    assert var.loc[fitted, "PValue"].between(0, 1).all()
++    assert (var.loc[fitted, "replicate_variance"] >= 0).all()
++    assert np.all(np.round(var.loc[fitted, "PValue"], 10) <= np.round(var.loc[fitted, "SpatialFDR"], 10)), (
++        "FDR is higher than uncorrected P-values"
++    )
++
++
++def test_de_nhoods_rejects_random_effects(da_nhoods_mdata, milo):
++    with pytest.raises(ValueError, match="not supported by de_nhoods"):
++        milo.de_nhoods(
++            da_nhoods_mdata,
++            design="~ condition + (1 | replicate)",
++            column="condition",
++            baseline="ConditionA",
++            group_to_compare="ConditionB",
++        )
++
++
++@pytest.mark.skipif(find_spec("formulaic_contrasts") is None, reason="formulaic-contrasts not available")
++def test_da_nhoods_glmm_subset_samples(da_nhoods_mdata, milo):
++    """The design frame is subset once, so passing a sample subset must not subset it twice."""
++    mdata = da_nhoods_mdata.copy()
++    subset = list(mdata["milo"].obs_names)[:4]
++
++    with pytest.warns(FutureWarning, match="subset_samples"):
++        milo.da_nhoods(mdata, design="~ condition + (1 | replicate)", subset_samples=subset)
++
++    var = mdata["milo"].var
++    fitted = var["logFC"].notna()
++    assert fitted.any()
++    assert var.loc[fitted, "PValue"].between(0, 1).all()
++
++
++@pytest.mark.skipif(find_spec("formulaic_contrasts") is None, reason="formulaic-contrasts not available")
++def test_da_nhoods_switching_between_models_replaces_results(da_nhoods_mdata, milo):
++    """Solvers report different columns, so a second run must not leave a mixture of both behind."""
++    mdata = da_nhoods_mdata.copy()
++    milo.da_nhoods(mdata, design="~ condition + (1 | replicate)")
++    assert "replicate_variance" in mdata["milo"].var.columns
++
++    milo.da_nhoods(mdata, design="~condition", solver="pydeseq2")
++    var = mdata["milo"].var
++
++    for column in ("replicate_variance", "SE", "tvalue", "Converged", "Logliklihood"):
++        assert column not in var.columns
++    assert "FDR" in var.columns
++    assert var["PValue"].notna().any()
++
++
++@pytest.mark.skipif(find_spec("formulaic_contrasts") is None, reason="formulaic-contrasts not available")
++def test_da_nhoods_glmm_contrasts(da_nhoods_mdata, milo):
++    """A contrast between the two levels reproduces the coefficient tested by default."""
++    mdata = da_nhoods_mdata.copy()
++    milo.da_nhoods(mdata, design="~ condition + (1 | replicate)")
++    default = mdata["milo"].var[["logFC", "PValue"]].copy()
++
++    milo.da_nhoods(
++        mdata,
++        design="~ condition + (1 | replicate)",
++        model_contrasts="conditionConditionB-conditionConditionA",
++    )
++    contrasted = mdata["milo"].var[["logFC", "PValue"]].copy()
++
++    fitted = default["logFC"].notna() & contrasted["logFC"].notna()
++    assert fitted.any()
++    np.testing.assert_allclose(default.loc[fitted, "logFC"], contrasted.loc[fitted, "logFC"], atol=1e-4)
++
++    with pytest.raises(ValueError, match="does not match any coefficient"):
++        milo.da_nhoods(mdata, design="~ condition + (1 | replicate)", model_contrasts="nonsense")
++
++
+ @pytest.fixture
+ def annotate_nhoods_mdata(adata, milo):
+     adata = adata.copy()
+diff --git a/tests/tools/test_milo_glmm.py b/tests/tools/test_milo_glmm.py
+new file mode 100644
+index 00000000..802cce6a
+--- /dev/null
++++ b/tests/tools/test_milo_glmm.py
+@@ -0,0 +1,189 @@
++import numpy as np
++import pandas as pd
++import pytest
++
++from pertpy.tools._milo_glmm import (
++    between_within_df,
++    fit_nb_glmm,
++    fit_nb_glmm_nhoods,
++    has_separation,
++    parse_random_effects,
++    random_effect_matrices,
++)
++
++
++@pytest.mark.parametrize(
++    "design,expected",
++    [
++        ("~ condition + (1 | donor)", ("~ condition", ["donor"])),
++        ("~condition+(1|donor)+age", ("~condition+age", ["donor"])),
++        ("~ (1 | donor)", ("~ 1", ["donor"])),
++        ("~ condition + (1 | donor) + (1 | batch)", ("~ condition", ["donor", "batch"])),
++        ("~ condition", ("~ condition", [])),
++    ],
++)
++def test_parse_random_effects(design, expected):
++    assert parse_random_effects(design) == expected
++
++
++def test_parse_random_effects_rejects_invalid_syntax():
++    with pytest.raises(ValueError, match="invalid formula for random effects"):
++        parse_random_effects("~ condition + (donor | condition)")
++
++
++def test_random_effect_matrices_are_indicators():
++    obs = pd.DataFrame({"donor": ["A", "B", "A", "C"]})
++    (name, Z), *rest = random_effect_matrices(obs, ["donor"])
++
++    assert not rest
++    assert name == "donor"
++    assert Z.shape == (4, 3)
++    assert np.array_equal(Z.sum(axis=1), np.ones(4))
++
++    with pytest.raises(ValueError, match="not a column"):
++        random_effect_matrices(obs, ["missing"])
++
++
++def test_random_effect_matrices_rejects_single_level():
++    obs = pd.DataFrame({"batch": ["A"] * 10})
++    with pytest.raises(ValueError, match="single level"):
++        random_effect_matrices(obs, ["batch"])
++
++
++def test_fit_nb_glmm_survives_an_unfactorisable_variance(monkeypatch):
++    """One pathological neighbourhood must not abort a run over thousands of them."""
++    rng = np.random.default_rng(0)
++    y = rng.poisson(30, 20).astype(float)
++    condition = np.tile([0.0, 1.0], 10)
++    X = np.column_stack([np.ones(20), condition])
++    Z = [("donor", pd.get_dummies(pd.Categorical(np.repeat(np.arange(5), 4))).to_numpy(dtype=float))]
++
++    def explode(*args, **kwargs):
++        raise np.linalg.LinAlgError("not positive definite")
++
++    monkeypatch.setattr("pertpy.tools._milo_glmm.cho_factor", explode)
++    fit = fit_nb_glmm(y, X, Z, np.zeros(20))
++
++    assert not fit.converged
++    assert np.isnan(fit.beta).all()
++    assert np.isnan(fit.se).all()
++
++
++def test_fit_nb_glmm_nhoods_reports_separated_neighbourhoods():
++    """A separated neighbourhood has no finite estimate, so it is NaN rather than a huge fold change."""
++    condition = np.tile([0.0, 1.0], 10)
++    X = np.column_stack([np.ones(20), condition])
++    Z = [("donor", pd.get_dummies(pd.Categorical(np.repeat(np.arange(5), 4))).to_numpy(dtype=float))]
++    rng = np.random.default_rng(0)
++
++    counts = np.vstack([rng.poisson(30, 20).astype(float), np.where(condition == 0, 0.0, 20.0)])
++    res = fit_nb_glmm_nhoods(counts, X, Z, np.zeros(20))
++
++    assert res.loc[0, "Converged"]
++    assert np.isfinite(res.loc[0, "logFC"])
++    assert not res.loc[1, "Converged"]
++    for column in ("logFC", "SE", "tvalue", "PValue", "donor_variance"):
++        assert np.isnan(res.loc[1, column])
++
++
++def test_has_separation():
++    X = np.column_stack([np.ones(6), np.repeat([0.0, 1.0], 3)])
++
++    assert not has_separation(np.array([1.0, 2, 3, 4, 5, 6]), X)
++    assert has_separation(np.array([0.0, 0, 0, 4, 5, 6]), X)
++    assert has_separation(np.zeros(6), X)
++
++
++def test_between_within_df():
++    donor = np.repeat(np.arange(20), 8)
++    Z = [("donor", pd.get_dummies(pd.Categorical(donor)).to_numpy(dtype=float))]
++    intercept = np.ones(160)
++
++    between = np.column_stack([intercept, np.repeat(np.tile([0.0, 1.0], 10), 8)])
++    assert between_within_df(between, Z) == 18
++
++    within = np.column_stack([intercept, np.tile([0.0, 1.0], 80)])
++    assert between_within_df(within, Z) == 139
++
++
++@pytest.fixture
++def repeated_measures():
++    """Counts from a negative binomial mixed model with a known effect and donor variance."""
++    rng = np.random.default_rng(0)
++    n_donor, per_donor = 30, 6
++    donor = np.repeat(np.arange(n_donor), per_donor)
++    condition = np.tile([0.0, 1.0], n_donor * per_donor // 2)
++    u = rng.normal(0, np.sqrt(0.25), n_donor)
++    mu = np.exp(3.0 + 1.2 * condition + u[donor])
++    y = rng.negative_binomial(10, 10 / (10 + mu)).astype(float)
++
++    X = np.column_stack([np.ones_like(condition), condition])
++    Z = [("donor", pd.get_dummies(pd.Categorical(donor)).to_numpy(dtype=float))]
++    return y, X, Z
++
++
++def test_fit_nb_glmm_recovers_parameters(repeated_measures):
++    y, X, Z = repeated_measures
++    fit = fit_nb_glmm(y, X, Z, np.zeros(len(y)))
++
++    assert fit.converged
++    assert abs(fit.beta[1] - 1.2) < 2 * fit.se[1]
++    assert abs(fit.beta[0] - 3.0) < 2 * fit.se[0]
++    assert 0.1 < fit.sigma[0] < 0.6
++    assert fit.dispersion == pytest.approx(0.1, abs=0.1)
++
++
++def test_fit_nb_glmm_ignores_random_effect_when_absent(repeated_measures):
++    """Without between-donor variance the variance component collapses towards zero."""
++    _, X, Z = repeated_measures
++    rng = np.random.default_rng(1)
++    mu = np.exp(3.0 + 1.2 * X[:, 1])
++    y = rng.negative_binomial(10, 10 / (10 + mu)).astype(float)
++
++    fit = fit_nb_glmm(y, X, Z, np.zeros(len(y)))
++
++    assert fit.converged
++    assert fit.sigma[0] < 0.1
++
++
++def test_fit_nb_glmm_two_random_effects():
++    """Two crossed random intercepts each recover their own variance component."""
++    rng = np.random.default_rng(5)
++    n_donor, n_batch, per_donor = 20, 10, 10
++    n = n_donor * per_donor
++    donor = np.repeat(np.arange(n_donor), per_donor)
++    batch = np.tile(np.arange(n_batch), n // n_batch)
++    condition = np.tile([0.0, 1.0], n // 2)
++    X = np.column_stack([np.ones(n), condition])
++    Z = [
++        ("donor", pd.get_dummies(pd.Categorical(donor)).to_numpy(dtype=float)),
++        ("batch", pd.get_dummies(pd.Categorical(batch)).to_numpy(dtype=float)),
++    ]
++
++    donor_var, batch_var = 0.5, 0.8
++    estimates = []
++    for _ in range(10):
++        u_donor = rng.normal(0, np.sqrt(donor_var), n_donor)
++        u_batch = rng.normal(0, np.sqrt(batch_var), n_batch)
++        mu = np.exp(3.0 + 1.0 * condition + u_donor[donor] + u_batch[batch])
++        y = rng.negative_binomial(8, 8 / (8 + mu)).astype(float)
++        fit = fit_nb_glmm(y, X, Z, np.zeros(n))
++        assert fit.converged
++        assert fit.sigma.shape == (2,)
++        estimates.append(np.concatenate([fit.sigma, fit.beta[1:]]))
++
++    mean = np.mean(estimates, axis=0)
++    assert mean[0] == pytest.approx(donor_var, abs=0.3)
++    assert mean[1] == pytest.approx(batch_var, abs=0.3)
++    assert mean[2] == pytest.approx(1.0, abs=0.2)
++
++
++def test_fit_nb_glmm_offset_shifts_intercept_only(repeated_measures):
++    y, X, Z = repeated_measures
++    offset = np.full(len(y), np.log(2.0))
++
++    without = fit_nb_glmm(y, X, Z, np.zeros(len(y)))
++    with_offset = fit_nb_glmm(y, X, Z, offset)
++
++    assert with_offset.beta[1] == pytest.approx(without.beta[1], abs=1e-3)
++    assert with_offset.beta[0] == pytest.approx(without.beta[0] - np.log(2.0), abs=1e-3)

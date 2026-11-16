@@ -1,0 +1,105 @@
+diff --git a/src/pertpy/tools/_milo.py b/src/pertpy/tools/_milo.py
+index 9be9a74f..5a1ade82 100644
+--- a/src/pertpy/tools/_milo.py
++++ b/src/pertpy/tools/_milo.py
+@@ -28,6 +28,7 @@
+     from matplotlib.axes import Axes
+     from matplotlib.colors import Colormap
+     from matplotlib.figure import Figure
++    from numpy.typing import ArrayLike
+ 
+ from scipy.sparse import coo_matrix, csr_matrix, issparse, spmatrix
+ from sklearn.metrics.pairwise import euclidean_distances
+@@ -50,6 +51,23 @@ def _contrast_vector(columns: list[str], model_contrasts: str) -> np.ndarray:
+     return weights.to_numpy()
+ 
+ 
++def _check_residual_df(design_matrix: ArrayLike, design: str) -> None:
++    """Reject designs that leave no residual degrees of freedom.
++
++    Dispersions are not estimable without replication, which makes the solvers either fail deep inside R or return meaningless results.
++    """
++    matrix = np.asarray(design_matrix, dtype=float)
++    n_samples = matrix.shape[0]
++    rank = int(np.linalg.matrix_rank(matrix)) if n_samples else 0
++    if n_samples > rank:
++        return
++    raise ValueError(
++        f"Design {design!r} estimates {rank} coefficients from {n_samples} samples, leaving no residual degrees of freedom "
++        "to estimate the dispersion. Differential abundance testing needs replicate samples per condition -- "
++        "`sample_col` must identify biological replicates rather than the conditions themselves."
++    )
++
++
+ def _weighted_bh(pvalues: np.ndarray, weights: np.ndarray) -> np.ndarray:
+     """Density-weighted Benjamini-Hochberg adjustment (Cydar/Milo style).
+ 
+@@ -315,6 +333,9 @@ def da_nhoods(
+ 
+         A random intercept in the design switches to a negative binomial mixed model, which accounts for repeated measurements of the same donor, batch or timepoint instead of treating every sample as independent.
+ 
++        The design must leave residual degrees of freedom, so there have to be more samples than coefficients.
++        Testing one sample per condition raises a `ValueError` because the dispersion is then not estimable.
++
+         Args:
+             mdata: MuData object
+             design: Formula for the test, following glm syntax from R (e.g. '~ condition').
+@@ -427,6 +448,7 @@ def da_nhoods(
+ 
+             fixed = fixed_design if add_intercept and model_contrasts is None else fixed_design + " + 0"
+             design_matrix = FormulaicContrasts(design_df, fixed).design_matrix
++            _check_residual_df(design_matrix, design)
+             counts_filtered = count_mat[np.ix_(keep_nhoods, keep_smp)]
+             lib_size_filtered = lib_size[keep_smp]
+ 
+@@ -470,6 +492,8 @@ def da_nhoods(
+                 design_r = pandas2ri.py2rpy(design_df)
+             formula_r = stats.formula(design)
+             model = stats.model_matrix(object=formula_r, data=design_r)
++            model_np = np.array(model)
++            _check_residual_df(model_np, design)
+ 
+             # Fit NB-GLM
+             counts_filtered = count_mat[np.ix_(keep_nhoods, keep_smp)]
+@@ -482,7 +506,6 @@ def da_nhoods(
+             dge = edgeR.estimateDisp(dge, model)
+             fit = edgeR.glmQLFit(dge, model, robust=True)
+             # Test
+-            model_np = np.array(model)
+             n_coef = model_np.shape[1]
+             if model_contrasts is not None:
+                 r_str = """
+@@ -555,6 +578,7 @@ def da_nhoods(
+                 size_factors_fit_type="poscounts",
+             )
+ 
++            _check_residual_df(dds.obsm["design_matrix"], design)  # type: ignore[arg-type]
+             dds.deseq2()
+ 
+             if model_contrasts is not None and "-" in model_contrasts:
+diff --git a/tests/tools/test_milo.py b/tests/tools/test_milo.py
+index 38582d40..dfc050fa 100644
+--- a/tests/tools/test_milo.py
++++ b/tests/tools/test_milo.py
+@@ -184,6 +184,21 @@ def test_da_nhoods_non_unique_covariate(da_nhoods_mdata, milo):
+         milo.da_nhoods(mdata, design="~phase")
+ 
+ 
++@pytest.fixture
++def unreplicated_mdata(adata, milo):
++    adata = adata.copy()
++    milo.make_nhoods(adata)
++    rng = np.random.default_rng(seed=42)
++    adata.obs["condition"] = rng.choice(["ConditionA", "ConditionB"], size=adata.n_obs)
++    adata.obs["sample"] = adata.obs["condition"].map({"ConditionA": "S1", "ConditionB": "S2"})
++    return milo.count_nhoods(adata, sample_col="sample")
++
++
++def test_da_nhoods_without_replication(unreplicated_mdata, milo, solver):
++    with pytest.raises(ValueError, match="residual degrees of freedom"):
++        milo.da_nhoods(unreplicated_mdata, design="~condition", solver=solver)
++
++
+ def test_da_nhoods_pvalues(da_nhoods_mdata, milo, solver):
+     mdata = da_nhoods_mdata.copy()
+     milo.da_nhoods(mdata, design="~condition", solver=solver)

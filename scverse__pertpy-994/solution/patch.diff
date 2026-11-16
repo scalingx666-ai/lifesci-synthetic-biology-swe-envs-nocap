@@ -1,0 +1,977 @@
+diff --git a/pertpy/tools/_perturbation_space/_clustering.py b/pertpy/tools/_perturbation_space/_clustering.py
+index af2ba10a..e6800486 100644
+--- a/pertpy/tools/_perturbation_space/_clustering.py
++++ b/pertpy/tools/_perturbation_space/_clustering.py
+@@ -4,7 +4,7 @@
+ 
+ from sklearn.metrics import pairwise_distances
+ 
+-from pertpy.tools._perturbation_space._perturbation_space import PerturbationSpace
++from pertpy.tools._perturbation_space._perturbation_space import PerturbationSpace, _resolve_matrix
+ 
+ if TYPE_CHECKING:
+     from collections.abc import Iterable
+@@ -15,16 +15,15 @@
+ class ClusteringSpace(PerturbationSpace):
+     """Applies various clustering techniques to an embedding."""
+ 
+-    def __init__(self):
+-        super().__init__()
+-        self.X = None
+-
+     def evaluate_clustering(
+         self,
+         adata: AnnData,
+         true_label_col: str,
+         cluster_col: str,
+         metrics: Iterable[str] = None,
++        *,
++        layer_key: str | None = None,
++        embedding_key: str | None = None,
+         **kwargs,
+     ):
+         """Evaluation of previously computed clustering against ground truth labels.
+@@ -33,9 +32,12 @@ def evaluate_clustering(
+             adata: AnnData object that contains the clustered data and the cluster labels.
+             true_label_col: ground truth labels.
+             cluster_col: cluster computed labels.
+-            metrics: Metrics to compute. If `None` it defaults to ["nmi", "ari", "asw"].
++            metrics: Metrics to compute. If `None` it defaults to ``["nmi", "ari", "asw"]`` — the canonical
++                trio for clustering benchmarks (mutual information, agreement, silhouette).
++            layer_key: Layer to resolve cell coordinates from when computing ASW.
++            embedding_key: Embedding to resolve cell coordinates from when computing ASW.
+             **kwargs: Additional arguments to pass to the metrics. For nmi, average_method can be passed.
+-                For asw, metric, distances, sample_size, and random_state can be passed.
++                For asw, ``metric``, ``distances``, ``sample_size``, and ``random_state`` can be passed.
+ 
+         Examples:
+             Example usage with KMeansSpace:
+@@ -52,7 +54,7 @@ def evaluate_clustering(
+             metrics = ["nmi", "ari", "asw"]
+         true_labels = adata.obs[true_label_col]
+ 
+-        results = {}
++        results: dict[str, float] = {}
+         for metric in metrics:
+             if metric == "nmi":
+                 from pertpy.tools._perturbation_space._metrics import nmi
+@@ -60,34 +62,33 @@ def evaluate_clustering(
+                 if "average_method" not in kwargs:
+                     kwargs["average_method"] = "arithmetic"  # by default in sklearn implementation
+ 
+-                nmi_score = nmi(
++                results["nmi"] = nmi(
+                     true_labels=true_labels,
+                     predicted_labels=adata.obs[cluster_col],
+                     average_method=kwargs["average_method"],
+                 )
+-                results["nmi"] = nmi_score
+ 
+-            if metric == "ari":
++            elif metric == "ari":
+                 from pertpy.tools._perturbation_space._metrics import ari
+ 
+-                ari_score = ari(true_labels=true_labels, predicted_labels=adata.obs[cluster_col])
+-                results["ari"] = ari_score
++                results["ari"] = ari(true_labels=true_labels, predicted_labels=adata.obs[cluster_col])
+ 
+-            if metric == "asw":
++            elif metric == "asw":
+                 from pertpy.tools._perturbation_space._metrics import asw
+ 
+-                if "metric" not in kwargs:
+-                    kwargs["metric"] = "euclidean"
++                kwargs.setdefault("metric", "euclidean")
++                kwargs.setdefault("sample_size", None)
++                kwargs.setdefault("random_state", None)
++
+                 if "distances" in kwargs:
+                     distances = kwargs["distances"]
+                 else:
+-                    distances = pairwise_distances(self.X, metric=kwargs["metric"])
+-                if "sample_size" not in kwargs:
+-                    kwargs["sample_size"] = None
+-                if "random_state" not in kwargs:
+-                    kwargs["random_state"] = None
++                    distances = pairwise_distances(
++                        _resolve_matrix(adata, layer_key=layer_key, embedding_key=embedding_key),
++                        metric=kwargs["metric"],
++                    )
+ 
+-                asw_score = asw(
++                results["asw"] = asw(
+                     pairwise_distances=distances,
+                     labels=true_labels,
+                     metric=kwargs["metric"],
+@@ -95,6 +96,4 @@ def evaluate_clustering(
+                     random_state=kwargs["random_state"],
+                 )
+ 
+-                results["asw"] = asw_score
+-
+         return results
+diff --git a/pertpy/tools/_perturbation_space/_perturbation_space.py b/pertpy/tools/_perturbation_space/_perturbation_space.py
+index 4336623d..e3d1a0cf 100644
+--- a/pertpy/tools/_perturbation_space/_perturbation_space.py
++++ b/pertpy/tools/_perturbation_space/_perturbation_space.py
+@@ -1,5 +1,6 @@
+ from __future__ import annotations
+ 
++import warnings
+ from typing import TYPE_CHECKING
+ 
+ import numpy as np
+@@ -10,15 +11,59 @@
+ from pertpy._logger import logger
+ 
+ if TYPE_CHECKING:
+-    from collections.abc import Iterable
++    from collections.abc import Callable, Iterable
++
++
++def _resolve_matrix(adata: AnnData, *, layer_key: str | None, embedding_key: str | None) -> np.ndarray:
++    """Pick the cell-by-feature matrix from a layer, an obsm embedding, or ``.X``.
++
++    Layer wins over embedding; both default back to ``.X``; passing both raises.
++    """
++    if layer_key is not None and embedding_key is not None:
++        raise ValueError("Please, select just either layer or embedding for computation.")
++    if layer_key is not None:
++        if layer_key not in adata.layers:
++            raise ValueError(f"Layer {layer_key!r} does not exist in the .layers attribute.")
++        return np.asarray(adata.layers[layer_key])
++    if embedding_key is not None:
++        if embedding_key not in adata.obsm:
++            raise ValueError(f"Embedding {embedding_key!r} does not exist in the .obsm attribute.")
++        return np.asarray(adata.obsm[embedding_key])
++    return np.asarray(adata.X)
++
++
++def _subtract_control_mean(
++    matrix: np.ndarray,
++    control_mask: np.ndarray,
++    group_masks: list[np.ndarray],
++    *,
++    name: str,
++) -> np.ndarray:
++    """Return ``matrix`` with the within-group control mean subtracted from every row.
++
++    Groups with no control cells are left untouched and a warning is emitted.
++    """
++    out = np.zeros_like(matrix, dtype=float)
++    for mask in group_masks:
++        in_group = mask & control_mask
++        n_control = int(in_group.sum())
++        if n_control == 0:
++            logger.warning(
++                f"No control cells found for one group when computing {name!r}; "
++                "leaving those rows unchanged (no control subtraction applied)."
++            )
++            out[mask, :] = matrix[mask, :]
++            continue
++        control_mean = matrix[in_group, :] if n_control == 1 else np.mean(matrix[in_group, :], axis=0)
++        out[mask, :] = matrix[mask, :] - control_mean
++    return out
+ 
+ 
+ class PerturbationSpace:
+     """Implements various ways of interacting with PerturbationSpaces.
+ 
+     We differentiate between a cell space and a perturbation space.
+-    Visually speaking, in cell spaces single data points in an embeddings summarize a cell,
+-    whereas in a perturbation space, data points summarize whole perturbations.
++    Visually speaking, in cell spaces single data points in an embeddings summarize a cell, whereas in a perturbation space, data points summarize whole perturbations.
+     """
+ 
+     def __init__(self):
+@@ -36,7 +81,7 @@ def compute_control_diff(  # type: ignore
+         embedding_key: str = None,
+         new_embedding_key: str = "control_diff",
+         all_data: bool = False,
+-        copy: bool = False,
++        copy: bool = True,
+     ) -> AnnData:
+         """Subtract mean of the control from the perturbation.
+ 
+@@ -50,7 +95,7 @@ def compute_control_diff(  # type: ignore
+             embedding_key: `obsm` key of the AnnData embedding to use for computation.
+             new_embedding_key: Results are stored in a new embedding in `obsm` with this key.
+             all_data: if True, do the computation in all data representations (X, all layers and all embeddings)
+-            copy: If True returns a new Anndata of same size with the new column; otherwise it updates the initial AnnData object.
++            copy: If True returns a new AnnData; otherwise updates the input AnnData in place.
+ 
+         Returns:
+             Updated AnnData object.
+@@ -77,80 +122,128 @@ def compute_control_diff(  # type: ignore
+         if copy:
+             adata = adata.copy()
+ 
+-        control_mask = adata.obs[target_col] == reference_key
+-        group_masks = (
+-            [(adata.obs[group_col] == sample) for sample in adata.obs[group_col].unique()]
+-            if group_col
+-            else [np.array([True] * adata.n_obs)]
+-        )
++        control_mask = (adata.obs[target_col] == reference_key).to_numpy()
++        if group_col is None:
++            group_masks: list[np.ndarray] = [np.ones(adata.n_obs, dtype=bool)]
++        else:
++            group_masks = [(adata.obs[group_col] == sample).to_numpy() for sample in adata.obs[group_col].unique()]
+ 
+         if layer_key:
+-            adata.layers[new_layer_key] = np.zeros((adata.n_obs, adata.n_vars))
+-            for mask in group_masks:
+-                num_control = (control_mask & mask).sum()
+-                if num_control == 1:
+-                    control_expression = adata.layers[layer_key][(control_mask & mask), :]
+-                elif num_control > 1:
+-                    control_expression = np.mean(adata.layers[layer_key][(control_mask & mask), :], axis=0)
+-                else:
+-                    control_expression = np.zeros((1, adata.n_vars))
+-                adata.layers[new_layer_key][mask, :] = adata.layers[layer_key][mask, :] - control_expression
++            adata.layers[new_layer_key] = _subtract_control_mean(
++                adata.layers[layer_key], control_mask, group_masks, name=new_layer_key
++            )
+ 
+         if embedding_key:
+-            adata.obsm[new_embedding_key] = np.zeros(adata.obsm[embedding_key].shape)
+-            for mask in group_masks:
+-                num_control = (control_mask & mask).sum()
+-                if num_control == 1:
+-                    control_expression = adata.obsm[embedding_key][(control_mask & mask), :]
+-                elif num_control > 1:
+-                    control_expression = np.mean(adata.obsm[embedding_key][(control_mask & mask), :], axis=0)
+-                else:
+-                    control_expression = np.zeros((1, adata.obsm[embedding_key].shape[1]))
+-                adata.obsm[new_embedding_key][mask, :] = adata.obsm[embedding_key][mask, :] - control_expression
++            adata.obsm[new_embedding_key] = _subtract_control_mean(
++                adata.obsm[embedding_key], control_mask, group_masks, name=new_embedding_key
++            )
+ 
+         if (not layer_key and not embedding_key) or all_data:
+-            adata_x = np.zeros((adata.n_obs, adata.n_vars))
+-            for mask in group_masks:
+-                num_control = (control_mask & mask).sum()
+-                if num_control == 1:
+-                    control_expression = adata.X[(control_mask & mask), :]
+-                elif num_control > 1:
+-                    control_expression = np.mean(adata.X[(control_mask & mask), :], axis=0)
+-                else:
+-                    control_expression = np.zeros((1, adata.n_vars))
+-                adata_x[mask, :] = adata.X[mask, :] - control_expression
+-            adata.X = adata_x
++            adata.X = _subtract_control_mean(np.asarray(adata.X), control_mask, group_masks, name="X")
+ 
+         if all_data:
+-            layers_keys = list(adata.layers.keys())
+-            for local_layer_key in layers_keys:
+-                if local_layer_key not in (layer_key, new_layer_key):
+-                    adata.layers[local_layer_key + "_control_diff"] = np.zeros((adata.n_obs, adata.n_vars))
+-                    for mask in group_masks:
+-                        adata.layers[local_layer_key + "_control_diff"][mask, :] = adata.layers[local_layer_key][
+-                            mask, :
+-                        ] - np.mean(adata.layers[local_layer_key][(control_mask & mask), :], axis=0)
+-
+-            embedding_keys = list(adata.obsm.keys())
+-            for local_embedding_key in embedding_keys:
+-                if local_embedding_key not in (embedding_key, new_embedding_key):
+-                    adata.obsm[local_embedding_key + "_control_diff"] = np.zeros(adata.obsm[local_embedding_key].shape)
+-                    for mask in group_masks:
+-                        adata.obsm[local_embedding_key + "_control_diff"][mask, :] = adata.obsm[local_embedding_key][
+-                            mask, :
+-                        ] - np.mean(adata.obsm[local_embedding_key][(control_mask & mask), :], axis=0)
++            for local_layer_key in list(adata.layers.keys()):
++                if local_layer_key in {layer_key, new_layer_key}:
++                    continue
++                new_key = local_layer_key + "_control_diff"
++                adata.layers[new_key] = _subtract_control_mean(
++                    adata.layers[local_layer_key], control_mask, group_masks, name=new_key
++                )
++
++            for local_embedding_key in list(adata.obsm.keys()):
++                if local_embedding_key in {embedding_key, new_embedding_key}:
++                    continue
++                new_key = local_embedding_key + "_control_diff"
++                adata.obsm[new_key] = _subtract_control_mean(
++                    adata.obsm[local_embedding_key], control_mask, group_masks, name=new_key
++                )
+ 
+         self.control_diff_computed = True
+ 
+         return adata
+ 
++    def _combine(
++        self,
++        adata: AnnData,
++        *,
++        perturbations: Iterable[str],
++        op: Callable[[np.ndarray, np.ndarray], np.ndarray],
++        reference_key: str,
++        new_pert_name: str,
++        ensure_consistency: bool,
++        target_col: str,
++    ) -> tuple[AnnData, AnnData] | AnnData:
++        """Backend for both ``add`` and ``subtract``.
++
++        ``op`` is applied as ``op(running_total, adata[perturbation].X)`` so callers pick addition or subtraction (or anything else operating in-place on a numpy array).
++        """
++        perturbations = list(perturbations)
++        for perturbation in perturbations:
++            if perturbation not in adata.obs_names:
++                raise ValueError(
++                    f"Perturbation {perturbation} not found in adata.obs_names. {perturbation} must be in adata.obs_names."
++                )
++
++        if ensure_consistency:
++            adata = self.compute_control_diff(adata, copy=True, all_data=True, target_col=target_col)
++            rename_back = {
++                key: key.removesuffix("_control_diff")
++                for key in [*adata.layers.keys(), *adata.obsm.keys()]
++                if key.endswith("_control_diff")
++            }
++        else:
++            warnings.warn(
++                "Combining perturbations without `ensure_consistency=True` is only well-defined "
++                "if the input was already differenced against control "
++                "(otherwise perturbation - perturbation != control).",
++                stacklevel=3,
++            )
++            rename_back = {}
++
++        def _running(values: np.ndarray) -> np.ndarray:
++            result = values[adata.obs_names.get_loc(reference_key)].astype(float, copy=True)
++            for perturbation in perturbations:
++                op(result, values[adata.obs_names.get_loc(perturbation)])
++            return result
++
++        new_layers: dict[str, np.ndarray] = {}
++        for layer_key, mat in adata.layers.items():
++            new_layers[rename_back.get(layer_key, layer_key)] = np.concatenate(
++                (np.asarray(mat), _running(np.asarray(mat))[None, :]), axis=0
++            )
++
++        new_obsm: dict[str, np.ndarray] = {}
++        for embedding_key, mat in adata.obsm.items():
++            new_obsm[rename_back.get(embedding_key, embedding_key)] = np.concatenate(
++                (np.asarray(mat), _running(np.asarray(mat))[None, :]), axis=0
++            )
++
++        X = np.asarray(adata.X)
++        new_X = np.concatenate((X, _running(X)[None, :]), axis=0)
++
++        new_perturbation = AnnData(X=new_X)
++        new_index = adata.obs_names.append(pd.Index([new_pert_name]))
++        new_perturbation.obs_names = new_index
++        new_perturbation.obs = adata.obs.reindex(new_index)
++
++        for key, value in new_layers.items():
++            new_perturbation.layers[key] = value
++        for key, value in new_obsm.items():
++            new_perturbation.obsm[key] = value
++
++        new_perturbation.obs[target_col] = new_perturbation.obs_names.astype("category")
++
++        if ensure_consistency:
++            return new_perturbation, adata
++        return new_perturbation
++
+     def add(
+         self,
+         adata: AnnData,
+         *,
+         perturbations: Iterable[str],
+         reference_key: str = "control",
+-        ensure_consistency: bool = False,
++        ensure_consistency: bool = True,
+         target_col: str = "perturbation",
+     ) -> tuple[AnnData, AnnData] | AnnData:
+         """Add perturbations linearly. Assumes input of size n_perts x dimensionality.
+@@ -159,13 +252,12 @@ def add(
+             adata: Anndata object of size n_perts x dim.
+             perturbations: Perturbations to add.
+             reference_key: perturbation source from which the perturbation summation starts.
+-            ensure_consistency: Whether to run differential expression on all data matrices to ensure consistency of linear space.
++            ensure_consistency: If True, differentiate against control via `compute_control_diff` before combining so that "perturbation - perturbation == control" holds in the resulting space. Set False only if the input has already been differenced.
+             target_col: `.obs` column name that stores the label of the perturbation applied to each cell.
+ 
+         Returns:
+             Anndata object of size (n_perts+1) x dim, where the last row is the addition of the specified perturbations.
+-            If ensure_consistency is True, returns a tuple of (new_perturbation, adata) where adata is the AnnData object
+-            provided as input but updated using compute_control_diff.
++            If ensure_consistency is True, returns a tuple of (new_perturbation, adata) where adata is the AnnData object provided as input but updated using compute_control_diff.
+ 
+         Examples:
+             Example usage with PseudobulkSpace:
+@@ -176,80 +268,21 @@ def add(
+             >>> ps_adata = ps.compute(mdata["rna"], target_col="gene_target", groups_col="gene_target")
+             >>> new_perturbation = ps.add(ps_adata, perturbations=["ATF2", "CD86"], reference_key="NT")
+         """
+-        new_pert_name = ""
+-        for perturbation in perturbations:
+-            if perturbation not in adata.obs_names:
+-                raise ValueError(
+-                    f"Perturbation {perturbation} not found in adata.obs_names. {perturbation} must be in adata.obs_names."
+-                )
+-            new_pert_name += perturbation + "+"
+-
+-        if not ensure_consistency:
+-            logger.warning(
+-                "Operation might be done in non-consistent space (perturbation - perturbation != control). \n"
+-                "Subtract control perturbation needed for consistency of space in all data representations. \n"
+-                "Run with ensure_consistency=True"
+-            )
+-        else:
+-            adata = self.compute_control_diff(adata, copy=True, all_data=True, target_col=target_col)
+-
+-        data: dict[str, dict[str, np.ndarray]] = {"layers": {}, "embeddings": {}}
+-
+-        for local_layer_key in adata.layers:
+-            control_local = adata[reference_key].layers[local_layer_key].copy()
+-            for perturbation in perturbations:
+-                control_local += adata[perturbation].layers[local_layer_key]
+-            original_data = adata.layers[local_layer_key].copy()
+-            new_data = np.concatenate((original_data, control_local))
+-            data["layers"][local_layer_key] = new_data
+-
+-        for local_embedding_key in adata.obsm:
+-            control_local = adata[reference_key].obsm[local_embedding_key].copy()
+-            for perturbation in perturbations:
+-                control_local += adata[perturbation].obsm[local_embedding_key]
+-            original_data = adata.obsm[local_embedding_key].copy()
+-            new_data = np.concatenate((original_data, control_local))
+-            data["embeddings"][local_embedding_key] = new_data
+-
+-        # Operate in X
+-        control = adata[reference_key].X.copy()
+-        for perturbation in perturbations:
+-            control += adata[perturbation].X
+-
+-        # Fill all obs fields with NaNs
+-        new_pert_obs = [np.nan for _ in adata.obs]
+-
+-        original_data = adata.X.copy()
+-        new_data = np.concatenate((original_data, control))
+-        new_perturbation = AnnData(X=new_data)
+-
+-        original_obs_names = adata.obs_names
+-        new_obs_names = original_obs_names.append(pd.Index([new_pert_name[:-1]]))
+-        new_perturbation.obs_names = new_obs_names
+-
+-        new_obs = adata.obs.copy()
+-        new_pert_obs_series = pd.Series(new_pert_obs, index=new_obs.columns)
+-        new_obs.loc[new_pert_name[:-1]] = new_pert_obs_series
+-        new_perturbation.obs = new_obs
+-
+-        for key, value in data["layers"].items():
+-            key_name = (
+-                key.removesuffix("_control_diff") if isinstance(key, str) and key.endswith("_control_diff") else key
+-            )
+-            new_perturbation.layers[key_name] = value
+-
+-        for key, value in data["embeddings"].items():
+-            key_name = (
+-                key.removesuffix("_control_diff") if isinstance(key, str) and key.endswith("_control_diff") else key
+-            )
+-            new_perturbation.obsm[key_name] = value
+-
+-        new_perturbation.obs[target_col] = new_perturbation.obs_names.astype("category")
+-
+-        if ensure_consistency:
+-            return new_perturbation, adata
+-
+-        return new_perturbation
++        perturbations = list(perturbations)
++        new_pert_name = "+".join(perturbations)
++
++        def _iadd(a: np.ndarray, b: np.ndarray) -> None:
++            a += b
++
++        return self._combine(
++            adata,
++            perturbations=perturbations,
++            op=_iadd,
++            reference_key=reference_key,
++            new_pert_name=new_pert_name,
++            ensure_consistency=ensure_consistency,
++            target_col=target_col,
++        )
+ 
+     def subtract(
+         self,
+@@ -257,7 +290,7 @@ def subtract(
+         *,
+         perturbations: Iterable[str],
+         reference_key: str = "control",
+-        ensure_consistency: bool = False,
++        ensure_consistency: bool = True,
+         target_col: str = "perturbation",
+     ) -> tuple[AnnData, AnnData] | AnnData:
+         """Subtract perturbations linearly. Assumes input of size n_perts x dimensionality.
+@@ -266,13 +299,12 @@ def subtract(
+             adata: Anndata object of size n_perts x dim.
+             perturbations: Perturbations to subtract.
+             reference_key: Perturbation source from which the perturbation subtraction starts.
+-            ensure_consistency: Whether to run differential expression on all data matrices to ensure consistency of linear space.
++            ensure_consistency: If True, differentiate against control via `compute_control_diff` before combining so that "perturbation - perturbation == control" holds in the resulting space. Set False only if the input has already been differenced.
+             target_col: `.obs` column name that stores the label of the perturbation applied to each cell.
+ 
+         Returns:
+             Anndata object of size (n_perts+1) x dim, where the last row is the subtraction of the specified perturbations.
+-            If ensure_consistency is True, returns a tuple of (new_perturbation, adata) where adata is the AnnData object
+-            provided as input but updated using compute_control_diff.
++            If ensure_consistency is True, returns a tuple of (new_perturbation, adata) where adata is the AnnData object provided as input but updated using compute_control_diff.
+ 
+         Examples:
+             Example usage with PseudobulkSpace:
+@@ -283,82 +315,23 @@ def subtract(
+             >>> ps_adata = ps.compute(mdata["rna"], target_col="gene_target", groups_col="gene_target")
+             >>> new_perturbation = ps.subtract(ps_adata, reference_key="ATF2", perturbations=["BRD4", "CUL3"])
+         """
+-        new_pert_name = reference_key + "-"
+-        for perturbation in perturbations:
+-            if perturbation not in adata.obs_names:
+-                raise ValueError(
+-                    f"Perturbation {perturbation} not found in adata.obs_names. {perturbation} must be in adata.obs_names."
+-                )
+-            new_pert_name += perturbation + "-"
+-
+-        if not ensure_consistency:
+-            logger.warning(
+-                "Operation might be done in non-consistent space (perturbation - perturbation != control).\n"
+-                "Subtract control perturbation needed for consistency of space in all data representations.\n"
+-                "Run with ensure_consistency=True"
+-            )
+-        else:
+-            adata = self.compute_control_diff(adata, copy=True, all_data=True, target_col=target_col)
+-
+-        data: dict[str, dict[str, np.ndarray]] = {"layers": {}, "embeddings": {}}
+-
+-        for local_layer_key in adata.layers:
+-            control_local = adata[reference_key].layers[local_layer_key].copy()
+-            for perturbation in perturbations:
+-                control_local -= adata[perturbation].layers[local_layer_key]
+-            original_data = adata.layers[local_layer_key].copy()
+-            new_data = np.concatenate((original_data, control_local))
+-            data["layers"][local_layer_key] = new_data
+-
+-        for local_embedding_key in adata.obsm:
+-            control_local = adata[reference_key].obsm[local_embedding_key].copy()
+-            for perturbation in perturbations:
+-                control_local -= adata[perturbation].obsm[local_embedding_key]
+-            original_data = adata.obsm[local_embedding_key].copy()
+-            new_data = np.concatenate((original_data, control_local))
+-            data["embeddings"][local_embedding_key] = new_data
+-
+-        # Operate in X
+-        control = adata[reference_key].X.copy()
+-        for perturbation in perturbations:
+-            control -= adata[perturbation].X
+-
+-        # Fill all obs fields with NaNs
+-        new_pert_obs = [np.nan for _ in adata.obs]
+-
+-        original_data = adata.X.copy()
+-        new_data = np.concatenate((original_data, control))
+-        new_perturbation = AnnData(X=new_data)
+-
+-        original_obs_names = adata.obs_names
+-        new_obs_names = original_obs_names.append(pd.Index([new_pert_name[:-1]]))
+-        new_perturbation.obs_names = new_obs_names
+-
+-        new_obs = adata.obs.copy()
+-        new_pert_obs_series = pd.Series(new_pert_obs, index=new_obs.columns)
+-        new_obs.loc[new_pert_name[:-1]] = new_pert_obs_series
+-        new_perturbation.obs = new_obs
+-
+-        for key, value in data["layers"].items():
+-            key_name = (
+-                key.removesuffix("_control_diff") if isinstance(key, str) and key.endswith("_control_diff") else key
+-            )
+-            new_perturbation.layers[key_name] = value
+-
+-        for key, value in data["embeddings"].items():
+-            key_name = (
+-                key.removesuffix("_control_diff") if isinstance(key, str) and key.endswith("_control_diff") else key
+-            )
+-            new_perturbation.obsm[key_name] = value
+-
+-        new_perturbation.obs[target_col] = new_perturbation.obs_names.astype("category")
+-
+-        if ensure_consistency:
+-            return new_perturbation, adata
+-
+-        return new_perturbation
++        perturbations = list(perturbations)
++        new_pert_name = reference_key + "-" + "-".join(perturbations)
++
++        def _isub(a: np.ndarray, b: np.ndarray) -> None:
++            a -= b
++
++        return self._combine(
++            adata,
++            perturbations=perturbations,
++            op=_isub,
++            reference_key=reference_key,
++            new_pert_name=new_pert_name,
++            ensure_consistency=ensure_consistency,
++            target_col=target_col,
++        )
+ 
+-    def label_transfer(  # noqa: D417
++    def label_transfer(
+         self,
+         adata: AnnData,
+         *,
+@@ -366,13 +339,11 @@ def label_transfer(  # noqa: D417
+         column_uncertainty_score_key: str = "perturbation_transfer_uncertainty",
+         target_val: str = "unknown",
+         neighbors_key: str = "neighbors",
+-        **kwargs,
+     ) -> None:
+         """Impute missing values in the specified column using KNN imputation in the space defined by `use_rep`.
+ 
+         Uncertainty is calculated as the entropy of the label distribution in the neighborhood of the target cell.
+-        In other words, a cell where all neighbors have the same set of labels will have an uncertainty of 0, whereas a cell
+-        where all neighbors have many different labels will have high uncertainty.
++        In other words, a cell where all neighbors have the same set of labels will have an uncertainty of 0, whereas a cell where all neighbors have many different labels will have high uncertainty.
+ 
+         Args:
+             adata: The AnnData object containing single-cell data.
+@@ -398,10 +369,6 @@ def label_transfer(  # noqa: D417
+         if neighbors_key not in adata.uns:
+             raise ValueError(f"Key {neighbors_key} not found in adata.uns. Please run `sc.pp.neighbors` first.")
+ 
+-        # backwards compatibility
+-        if "column" in kwargs:
+-            target_column = kwargs.pop("column")
+-
+         labels = adata.obs[target_column].astype(str)
+         target_cells = labels == target_val
+ 
+diff --git a/pertpy/tools/_perturbation_space/_simple.py b/pertpy/tools/_perturbation_space/_simple.py
+index 952f9541..7c22854b 100644
+--- a/pertpy/tools/_perturbation_space/_simple.py
++++ b/pertpy/tools/_perturbation_space/_simple.py
+@@ -9,7 +9,7 @@
+ from sklearn.cluster import DBSCAN, KMeans
+ 
+ from pertpy.tools._perturbation_space._clustering import ClusteringSpace
+-from pertpy.tools._perturbation_space._perturbation_space import PerturbationSpace
++from pertpy.tools._perturbation_space._perturbation_space import PerturbationSpace, _resolve_matrix
+ 
+ 
+ class CentroidSpace(PerturbationSpace):
+@@ -49,45 +49,20 @@ def compute(
+             >>> cs = pt.tl.CentroidSpace()
+             >>> cs_adata = cs.compute(mdata["rna"], target_col="gene_target")
+         """
+-        X = None
+-        if layer_key is not None and embedding_key is not None:
+-            raise ValueError("Please, select just either layer or embedding for computation.")
+-
+-        if embedding_key is not None:
+-            if embedding_key not in adata.obsm:
+-                raise ValueError(f"Embedding {embedding_key!r} does not exist in the .obsm attribute.")
+-            else:
+-                X = np.empty((len(adata.obs[target_col].unique()), adata.obsm[embedding_key].shape[1]))
+-
+-        if layer_key is not None:
+-            if layer_key not in adata.layers:
+-                raise ValueError(f"Layer {layer_key!r} does not exist in the .layers attribute.")
+-            else:
+-                X = np.empty((len(adata.obs[target_col].unique()), adata.layers[layer_key].shape[1]))
+-
+         if target_col not in adata.obs:
+             raise ValueError(f"Obs {target_col!r} does not exist in the .obs attribute.")
+ 
+-        grouped = adata.obs.groupby(target_col)
+-
+-        if X is None:
+-            X = np.empty((len(adata.obs[target_col].unique()), adata.obsm[embedding_key].shape[1]))
+-
+-        index = []
+-        for pert_index, (group_name, group_data) in enumerate(grouped):
+-            indices = group_data.index
+-            if layer_key is not None:
+-                points = adata[indices].layers[layer_key]
+-            elif embedding_key is not None:
+-                points = adata[indices].obsm[embedding_key]
+-            else:
+-                points = adata[indices].X
+-            index.append(group_name)
+-            centroid = np.mean(points, axis=0)  # find centroid of cloud of points
+-            closest_point = min(
+-                points, key=lambda point: np.linalg.norm(point - centroid)
+-            )  # Find the point in the array closest to the centroid
+-            X[pert_index, :] = closest_point
++        coords = _resolve_matrix(adata, layer_key=layer_key, embedding_key=embedding_key)
++
++        groups = adata.obs.groupby(target_col, observed=True)
++        index = list(groups.groups.keys())
++        X = np.empty((len(index), coords.shape[1]), dtype=coords.dtype)
++        for pert_index, (_, group_data) in enumerate(groups):
++            row_idx = adata.obs_names.get_indexer(group_data.index)
++            points = coords[row_idx]
++            centroid = points.mean(axis=0)
++            closest = np.argmin(np.linalg.norm(points - centroid, axis=1))
++            X[pert_index, :] = points[closest]
+ 
+         ps_adata = AnnData(X=X)
+         ps_adata.obs_names = index
+@@ -97,9 +72,8 @@ def compute(
+             ps_adata.obsm[embedding_key] = X
+ 
+         if keep_obs:  # Save the values of the obs columns of interest in the ps_adata object
+-            obs_df = adata.obs
+-            obs_df = obs_df.groupby(target_col).agg(
+-                lambda pert_group: np.nan if len(set(pert_group)) != 1 else list(set(pert_group))[0]
++            obs_df = adata.obs.groupby(target_col, observed=True).agg(
++                lambda pert_group: np.nan if len(set(pert_group)) != 1 else next(iter(set(pert_group)))
+             )
+             for obs_name in obs_df.columns:
+                 if not obs_df[obs_name].isnull().values.any():
+@@ -155,18 +129,16 @@ def compute(
+         if embedding_key is not None:
+             if embedding_key not in adata.obsm:
+                 raise ValueError(f"Embedding {embedding_key!r} does not exist in the .obsm attribute.")
+-            else:
+-                adata_emb = AnnData(X=adata.obsm[embedding_key])
+-                adata_emb.obs_names = adata.obs_names
+-                adata_emb.obs = adata.obs
+-                adata = adata_emb
+-
++            adata_emb = AnnData(X=adata.obsm[embedding_key])
++            adata_emb.obs_names = adata.obs_names
++            adata_emb.obs = adata.obs.copy()
++            adata = adata_emb
++        else:
++            adata = adata.copy()
+         adata.obs[target_col] = adata.obs[target_col].astype("category")
+         grouping_cols = [target_col] if groups_col is None else [target_col, groups_col]
+         original_obs = adata.obs.copy()
+-        ps_adata = sc.get.aggregate(
+-            adata, by=[target_col] if groups_col is None else [target_col, groups_col], func=mode, layer=layer_key
+-        )
++        ps_adata = sc.get.aggregate(adata, by=grouping_cols, func=mode, layer=layer_key)
+ 
+         if None in ps_adata.layers:
+             del ps_adata.layers[None]
+@@ -189,6 +161,25 @@ def compute(
+         return ps_adata
+ 
+ 
++def _run_clustering(
++    estimator,
++    adata: AnnData,
++    *,
++    layer_key: str | None,
++    embedding_key: str | None,
++    cluster_key: str,
++    copy: bool,
++    return_object: bool,
++) -> tuple[AnnData, object] | AnnData:
++    """Shared body for KMeansSpace/DBSCANSpace — resolve coords, fit, write labels."""
++    if copy:
++        adata = adata.copy()
++    coords = _resolve_matrix(adata, layer_key=layer_key, embedding_key=embedding_key)
++    fitted = estimator.fit(coords)
++    adata.obs[cluster_key] = pd.Categorical(fitted.labels_)
++    return (adata, fitted) if return_object else adata
++
++
+ class KMeansSpace(ClusteringSpace):
+     """Computes K-Means clustering of the expression values."""
+ 
+@@ -215,8 +206,7 @@ def compute(  # type: ignore
+ 
+         Returns:
+             If return_object is True, the adata and the clustering object is returned.
+-            Otherwise, only the adata is returned. The adata is updated with a new .obs column as specified in cluster_key,
+-            that stores the cluster labels.
++            Otherwise, only the adata is returned. The adata is updated with a new .obs column as specified in cluster_key, that stores the cluster labels.
+ 
+         Examples:
+             >>> import pertpy as pt
+@@ -224,35 +214,15 @@ def compute(  # type: ignore
+             >>> kmeans = pt.tl.KMeansSpace()
+             >>> kmeans_adata = kmeans.compute(mdata["rna"], n_clusters=26)
+         """
+-        if copy:
+-            adata = adata.copy()
+-
+-        if layer_key is not None and embedding_key is not None:
+-            raise ValueError("Please, select just either layer or embedding for computation.")
+-
+-        if embedding_key is not None:
+-            if embedding_key not in adata.obsm:
+-                raise ValueError(f"Embedding {embedding_key!r} does not exist in the .obsm attribute.")
+-            else:
+-                self.X = adata.obsm[embedding_key]
+-
+-        elif layer_key is not None:
+-            if layer_key not in adata.layers:
+-                raise ValueError(f"Layer {layer_key!r} does not exist in the anndata.")
+-            else:
+-                self.X = adata.layers[layer_key]
+-
+-        else:
+-            self.X = adata.X
+-
+-        clustering = KMeans(**kwargs).fit(self.X)
+-        adata.obs[cluster_key] = clustering.labels_
+-        adata.obs[cluster_key] = adata.obs[cluster_key].astype("category")
+-
+-        if return_object:
+-            return adata, clustering
+-
+-        return adata
++        return _run_clustering(
++            KMeans(**kwargs),
++            adata,
++            layer_key=layer_key,
++            embedding_key=embedding_key,
++            cluster_key=cluster_key,
++            copy=copy,
++            return_object=return_object,
++        )
+ 
+ 
+ class DBSCANSpace(ClusteringSpace):
+@@ -281,8 +251,7 @@ def compute(  # type: ignore
+ 
+         Returns:
+             If return_object is True, the adata and the clustering object is returned.
+-            Otherwise, only the adata is returned. The adata is updated with a new .obs column as specified in cluster_key,
+-            that stores the cluster labels.
++            Otherwise, only the adata is returned. The adata is updated with a new .obs column as specified in cluster_key, that stores the cluster labels.
+ 
+         Examples:
+             >>> import pertpy as pt
+@@ -290,29 +259,12 @@ def compute(  # type: ignore
+             >>> dbscan = pt.tl.DBSCANSpace()
+             >>> dbscan_adata = dbscan.compute(mdata["rna"])
+         """
+-        if copy:
+-            adata = adata.copy()
+-
+-        if embedding_key is not None:
+-            if embedding_key not in adata.obsm:
+-                raise ValueError(f"Embedding {embedding_key!r} does not exist in the .obsm attribute.")
+-            else:
+-                self.X = adata.obsm[embedding_key]
+-
+-        elif layer_key is not None:
+-            if layer_key not in adata.layers:
+-                raise ValueError(f"Layer {layer_key!r} does not exist in the anndata.")
+-            else:
+-                self.X = adata.layers[layer_key]
+-
+-        else:
+-            self.X = adata.X
+-
+-        clustering = DBSCAN(**kwargs).fit(self.X)
+-        adata.obs[cluster_key] = clustering.labels_
+-        adata.obs[cluster_key] = adata.obs[cluster_key].astype("category")
+-
+-        if return_object:
+-            return adata, clustering
+-
+-        return adata
++        return _run_clustering(
++            DBSCAN(**kwargs),
++            adata,
++            layer_key=layer_key,
++            embedding_key=embedding_key,
++            cluster_key=cluster_key,
++            copy=copy,
++            return_object=return_object,
++        )
+diff --git a/tests/tools/_perturbation_space/test_simple_cluster_space.py b/tests/tools/_perturbation_space/test_simple_cluster_space.py
+index ae77849d..03c84e14 100644
+--- a/tests/tools/_perturbation_space/test_simple_cluster_space.py
++++ b/tests/tools/_perturbation_space/test_simple_cluster_space.py
+@@ -51,7 +51,3 @@ def test_clustering():
+     np.testing.assert_allclose(results["nmi"], 0.99, rtol=0.1)
+     np.testing.assert_allclose(results["ari"], 0.99, rtol=0.1)
+     np.testing.assert_allclose(results["asw"], 0.99, rtol=0.1)
+-
+-    np.testing.assert_allclose(results["nmi"], 0.99, rtol=0.1)
+-    np.testing.assert_allclose(results["ari"], 0.99, rtol=0.1)
+-    np.testing.assert_allclose(results["asw"], 0.99, rtol=0.1)
+diff --git a/tests/tools/_perturbation_space/test_simple_perturbation_space.py b/tests/tools/_perturbation_space/test_simple_perturbation_space.py
+index 1d1c99c5..8a1a1627 100644
+--- a/tests/tools/_perturbation_space/test_simple_perturbation_space.py
++++ b/tests/tools/_perturbation_space/test_simple_perturbation_space.py
+@@ -46,7 +46,7 @@ def adata_simple(rng):
+ 
+ def test_differential_response(adata_simple):
+     ps = pt.tl.PseudobulkSpace()
+-    ps_adata = ps.compute_control_diff(adata_simple, target_col="perturbation", copy=True)
++    ps_adata = ps.compute_control_diff(adata_simple, target_col="perturbation")
+ 
+     expected_diff_matrix = adata_simple.X - adata_simple.X[0, :]
+     np.testing.assert_allclose(ps_adata.X, expected_diff_matrix, rtol=1e-4)
+@@ -60,7 +60,6 @@ def test_differential_response(adata_simple):
+             new_layer_key="counts_diff",
+             embedding_key="X_pca",
+             new_embedding_key="pca_diff",
+-            copy=True,
+         )
+ 
+ 
+@@ -180,7 +179,7 @@ def test_linear_operations():
+     psadata_umap = ps.compute(adata, mode="mean", embedding_key="X_umap")
+     psadata.obsm["X_umap"] = psadata_umap.X
+ 
+-    ps_adata, data_compare = ps.add(psadata, perturbations=["target1", "target2"], ensure_consistency=True)
++    ps_adata, data_compare = ps.add(psadata, perturbations=["target1", "target2"])
+ 
+     test = data_compare["control"].X + data_compare["target1"].X + data_compare["target2"].X
+     np.testing.assert_allclose(test, ps_adata["target1+target2"].X, rtol=1e-4)
+@@ -192,27 +191,24 @@ def test_linear_operations():
+     )
+     np.testing.assert_allclose(test, ps_adata["target1+target2"].obsm["X_umap"], rtol=1e-4)
+ 
+-    ps_adata, data_compare = ps.subtract(
+-        psadata, reference_key="target1", perturbations=["target2"], ensure_consistency=True
+-    )
++    ps_adata, data_compare = ps.subtract(psadata, reference_key="target1", perturbations=["target2"])
+ 
+     test = data_compare["target1"].X - data_compare["target2"].X
+     np.testing.assert_allclose(test, ps_adata["target1-target2"].X, rtol=1e-4)
+ 
+-    ps_adata = ps.compute_control_diff(psadata, copy=True)
++    # Input that has already been differenced — opt out of the auto-diff with ensure_consistency=False.
++    ps_adata = ps.compute_control_diff(psadata)
+ 
+-    ps_adata2 = ps.add(ps_adata, perturbations=["target1", "target2"])
++    ps_adata2 = ps.add(ps_adata, perturbations=["target1", "target2"], ensure_consistency=False)
+ 
+     test = ps_adata["control"].X + ps_adata["target1"].X + ps_adata["target2"].X
+     np.testing.assert_allclose(test, ps_adata2["target1+target2"].X, rtol=1e-4)
+ 
+-    ps_adata2 = ps.subtract(ps_adata, reference_key="target1", perturbations=["target1"])
++    ps_adata2 = ps.subtract(ps_adata, reference_key="target1", perturbations=["target1"], ensure_consistency=False)
+     ps_vector = ps_adata2["target1-target1"].X
+     np.testing.assert_allclose(ps_adata2["control"].X, ps_adata2["target1-target1"].X, rtol=1e-4)
+ 
+-    ps_adata2, data_compare = ps.subtract(
+-        ps_adata, reference_key="target1", perturbations=["target1"], ensure_consistency=True
+-    )
++    ps_adata2, data_compare = ps.subtract(ps_adata, reference_key="target1", perturbations=["target1"])
+     ps_inner_vector = ps_adata2["target1-target1"].X
+ 
+     np.testing.assert_allclose(ps_inner_vector, ps_vector, rtol=1e-4)
+@@ -227,12 +223,6 @@ def test_linear_operations():
+             perturbations=["target1", "target3"],
+         )
+ 
+-    with pytest.raises(ValueError):
+-        ps.add(
+-            ps_adata,
+-            perturbations=["target1", "target3"],
+-        )
+-
+ 
+ def test_label_transfer():
+     rng = np.random.default_rng()

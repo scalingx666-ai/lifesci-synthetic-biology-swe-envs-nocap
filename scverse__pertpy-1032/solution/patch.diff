@@ -1,0 +1,1384 @@
+diff --git a/docs/api/tools_index.md b/docs/api/tools_index.md
+index 792ac471..d0ea7936 100644
+--- a/docs/api/tools_index.md
++++ b/docs/api/tools_index.md
+@@ -451,20 +451,25 @@ See [CINEMA-OT tutorial](https://pertpy.readthedocs.io/en/latest/tutorials/noteb
+ 
+ ## Perturbation space
+ 
+-Perturbation spaces depart from the individualistic perspective of cells and instead organizes cells into cohesive ensembles.
+-This specialized space enables comprehending the collective impact of perturbations on cells.
+-Pertpy offers various modules for calculating and evaluating perturbation spaces that are either based on summary statistics or clusters.
++Perturbation spaces depart from the individualistic perspective of cells and instead organize cells into cohesive ensembles.
++Every space summarizes all cells of a perturbation into a single representation, yielding an AnnData with one observation per perturbation that can be clustered, compared and combined.
++Pertpy offers summary-statistic spaces (pseudobulk, centroid), a distance-based space, discriminative spaces, a space for external per-perturbation embeddings, and clustering spaces.
++The shared base class additionally provides operations on the resulting spaces such as control differencing, linear combination, nearest-perturbation queries, additive combination scoring and dose-response quantification.
+ 
+ ```{eval-rst}
+ .. autosummary::
+     :toctree: tools
+ 
+-    tools.MLPClassifierSpace
+-    tools.LRClassifierSpace
++    tools.PseudobulkSpace
+     tools.CentroidSpace
+-    tools.DBSCANSpace
++    tools.DistanceSpace
++    tools.EmbeddingSpace
++    tools.LRClassifierSpace
++    tools.MLPClassifierSpace
+     tools.KMeansSpace
+-    tools.PseudobulkSpace
++    tools.HDBSCANSpace
++    tools.ClusteringSpace
++    tools.PerturbationComparison
+ ```
+ 
+ Example implementation:
+@@ -473,13 +478,15 @@ Example implementation:
+ import pertpy as pt
+ 
+ mdata = pt.dt.papalexi_2021()
++
++# Summarize each perturbation into one observation
+ ps = pt.tl.PseudobulkSpace()
+-ps_adata = ps.compute(
+-    mdata["rna"],
+-    target_col="gene_target",
+-    groups_col="gene_target",
+-    mode="mean",
+-)
++ps_adata = ps.compute(mdata["rna"], target_col="gene_target", mode="mean")
++
++# Represent each perturbation by its distance to all others and find similar perturbations
++ds = pt.tl.DistanceSpace()
++ds_adata = ds.compute(mdata["rna"], target_col="gene_target", metric="edistance", embedding_key="X_pca")
++similar = ds.nearest_perturbations(ds_adata, "IFNGR2", target_col="gene_target")
+ ```
+ 
+ See [perturbation space tutorial](https://pertpy.readthedocs.io/en/latest/tutorials/notebooks/perturbation_space.html).
+diff --git a/docs/conf.py b/docs/conf.py
+index e1e29d40..5b9e1640 100644
+--- a/docs/conf.py
++++ b/docs/conf.py
+@@ -119,6 +119,7 @@
+     "python": ("https://docs.python.org/3", None),
+     "scipy": ("https://docs.scipy.org/doc/scipy/", None),
+     "scanpy": ("https://scanpy.readthedocs.io/en/stable/", None),
++    "seaborn": ("https://seaborn.pydata.org/", None),
+     "pyro": ("https://docs.pyro.ai/en/stable/", None),
+     "pymde": ("https://pymde.org/", None),
+     "flax": ("https://flax.readthedocs.io/en/latest/", None),
+diff --git a/docs/tutorials/notebooks b/docs/tutorials/notebooks
+index 42d7ee0f..8789a03a 160000
+--- a/docs/tutorials/notebooks
++++ b/docs/tutorials/notebooks
+@@ -1 +1 @@
+-Subproject commit 42d7ee0fb8ede8167d65b577526af895e78a2436
++Subproject commit 8789a03a2d5050304f43fa20512b1460dca67cd6
+diff --git a/pertpy/_types.py b/pertpy/_types.py
+index bd0e1c07..c6620b38 100644
+--- a/pertpy/_types.py
++++ b/pertpy/_types.py
+@@ -1,6 +1,9 @@
++import numpy as np
+ from scipy import sparse
+ 
+ CSBase = sparse.csr_matrix | sparse.csc_matrix
+ CSRBase = sparse.csr_matrix
+ CSCBase = sparse.csc_matrix
+ SpBase = sparse.spmatrix
++
++RandomStateLike = int | np.random.Generator | np.random.RandomState | None
+diff --git a/pertpy/tools/__init__.py b/pertpy/tools/__init__.py
+index 2a602a5c..861d3190 100644
+--- a/pertpy/tools/__init__.py
++++ b/pertpy/tools/__init__.py
+@@ -18,7 +18,9 @@
+ )
+ from pertpy.tools._perturbation_space._simple import (
+     CentroidSpace,
+-    DBSCANSpace,
++    DistanceSpace,
++    EmbeddingSpace,
++    HDBSCANSpace,
+     KMeansSpace,
+     PseudobulkSpace,
+ )
+@@ -77,7 +79,9 @@ def __dir__():
+     "LRClassifierSpace",
+     "MLPClassifierSpace",
+     "CentroidSpace",
+-    "DBSCANSpace",
++    "DistanceSpace",
++    "EmbeddingSpace",
++    "HDBSCANSpace",
+     "KMeansSpace",
+     "PseudobulkSpace",
+     "Scgen",
+diff --git a/pertpy/tools/_perturbation_space/_discriminator_classifiers.py b/pertpy/tools/_perturbation_space/_discriminator_classifiers.py
+index c5bc408c..d3a403a7 100644
+--- a/pertpy/tools/_perturbation_space/_discriminator_classifiers.py
++++ b/pertpy/tools/_perturbation_space/_discriminator_classifiers.py
+@@ -1,6 +1,6 @@
+ from __future__ import annotations
+ 
+-from typing import Any
++from typing import TYPE_CHECKING, Any
+ 
+ import flax.linen as nn
+ import jax
+@@ -17,7 +17,14 @@
+ from sklearn.model_selection import train_test_split
+ from sklearn.preprocessing import OneHotEncoder
+ 
+-from pertpy.tools._perturbation_space._perturbation_space import PerturbationSpace
++from pertpy.tools._perturbation_space._perturbation_space import (
++    PerturbationSpace,
++    _carry_constant_obs,
++    _sklearn_random_state,
++)
++
++if TYPE_CHECKING:
++    from pertpy._types import RandomStateLike
+ 
+ 
+ class LRClassifierSpace(PerturbationSpace):
+@@ -30,25 +37,27 @@ class LRClassifierSpace(PerturbationSpace):
+     def compute(
+         self,
+         adata: AnnData,
+-        target_col: str = "perturbations",
+-        layer_key: str = None,
+-        embedding_key: str = None,
++        target_col: str = "perturbation",
++        layer_key: str | None = None,
++        embedding_key: str | None = None,
+         test_split_size: float = 0.2,
+         max_iter: int = 1000,
+-    ):
++        random_state: RandomStateLike = 0,
++    ) -> AnnData:
+         """Fits a logistic regression model to the data and takes the coefficients of the logistic regression model as perturbation embedding.
+ 
+         Args:
+             adata: AnnData object of size cells x genes
+-            target_col: .obs column that stores the perturbations.
++            target_col: `.obs` column that stores the label of the perturbation applied to each cell.
+             layer_key: Layer in adata to use.
+             embedding_key: Key of the embedding in obsm to be used as data for the logistic regression classifier.
+                 Can only be specified if layer_key is None.
+             test_split_size: Fraction of data to put in the test set.
+             max_iter: Maximum number of iterations taken for the solvers to converge.
++            random_state: Random seed for the train/test split and the classifier.
+ 
+         Returns:
+-            AnnData object with the logistic regression coefficients as the embedding in X and the perturbations as .obs['perturbations'].
++            AnnData object with one observation per perturbation, the logistic regression coefficients in `.X` and the perturbation labels in `.obs[target_col]`.
+ 
+         Examples:
+             >>> import pertpy as pt
+@@ -76,35 +85,28 @@ def compute(
+             regression_data = adata.X
+ 
+         regression_labels = adata.obs[target_col]
++        random_state = _sklearn_random_state(random_state)
++        regression_model = LogisticRegression(max_iter=max_iter, class_weight="balanced", random_state=random_state)
+ 
+-        adata_obs = adata.obs.reset_index(drop=True)
+-        adata_obs = adata_obs.groupby(target_col).agg(
+-            lambda pert_group: np.nan if len(set(pert_group)) != 1 else list(set(pert_group))[0]
+-        )
+-
+-        regression_model = LogisticRegression(max_iter=max_iter, class_weight="balanced")
+-        regression_embeddings = {}
+-        regression_scores = {}
+-
+-        for perturbation in regression_labels.unique():
++        perturbations = list(regression_labels.unique())
++        embeddings = []
++        scores = []
++        for perturbation in perturbations:
+             labels = np.where(regression_labels == perturbation, 1, 0)
+             X_train, X_test, y_train, y_test = train_test_split(
+-                regression_data, labels, test_size=test_split_size, stratify=labels
++                regression_data, labels, test_size=test_split_size, stratify=labels, random_state=random_state
+             )
+-
+             regression_model.fit(X_train, y_train)
+-            regression_embeddings[perturbation] = regression_model.coef_
+-            regression_scores[perturbation] = regression_model.score(X_test, y_test)
++            embeddings.append(regression_model.coef_)
++            scores.append(regression_model.score(X_test, y_test))
+ 
+-        pert_adata = AnnData(X=np.array(list(regression_embeddings.values())).squeeze())
+-        pert_adata.obs["perturbations"] = list(regression_embeddings.keys())
+-        pert_adata.obs["classifier_score"] = list(regression_scores.values())
++        pert_adata = AnnData(X=np.concatenate(embeddings, axis=0))
++        pert_adata.obs_names = [str(perturbation) for perturbation in perturbations]
++        pert_adata.obs[target_col] = pd.Categorical(perturbations)
++        pert_adata.obs["classifier_score"] = scores
+ 
+-        for obs_name in adata_obs.columns:
+-            if not adata_obs[obs_name].isnull().values.any():
+-                pert_adata.obs[obs_name] = pert_adata.obs["perturbations"].map(
+-                    {pert: adata_obs.loc[pert][obs_name] for pert in adata_obs.index}
+-                )
++        _carry_constant_obs(pert_adata, adata.obs, target_col)
++        pert_adata.obs[target_col] = pert_adata.obs[target_col].astype("category")
+ 
+         return pert_adata
+ 
+@@ -219,9 +221,9 @@ class JAXDataset:
+     def __init__(
+         self,
+         adata: AnnData,
+-        target_col: str = "perturbations",
+-        label_col: str = "perturbations",
+-        layer_key: str = None,
++        target_col: str = "perturbation",
++        label_col: str = "perturbation",
++        layer_key: str | None = None,
+     ):
+         """JAX Dataset for perturbation classification.
+ 
+@@ -231,10 +233,7 @@ def __init__(
+             label_col: key with the perturbation labels.
+             layer_key: key of the layer to be used as data, otherwise .X.
+         """
+-        if layer_key:
+-            self.data = adata.layers[layer_key]
+-        else:
+-            self.data = adata.X
++        self.data = adata.layers[layer_key] if layer_key else adata.X
+ 
+         if target_col in adata.obs.columns:
+             self.labels = adata.obs[target_col].values
+@@ -245,10 +244,12 @@ def __init__(
+ 
+         self.pert_labels = adata.obs[label_col].values
+ 
+-        if scipy.sparse.issparse(self.data):
+-            self.data = to_dense(self.data)
+-
+-        self.data = jnp.array(self.data, dtype=jnp.float32)
++        # Keep sparse data sparse and densify only the requested batch to avoid materializing the full dense matrix.
++        self.is_sparse = scipy.sparse.issparse(self.data)
++        if self.is_sparse:
++            self.data = self.data.tocsr()
++        else:
++            self.data = jnp.array(np.asarray(self.data), dtype=jnp.float32)
+         self.labels = jnp.array(self.labels, dtype=jnp.float32)
+ 
+     def __len__(self):
+@@ -256,9 +257,13 @@ def __len__(self):
+ 
+     def get_batch(self, indices: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray, list]:
+         """Returns a batch of samples and corresponding perturbations applied (labels)."""
+-        batch_data = self.data[indices]
+-        batch_labels = self.labels[indices]
+-        batch_pert_labels = [self.pert_labels[i] for i in indices]
++        idx = np.asarray(indices)
++        if self.is_sparse:
++            batch_data = jnp.array(to_dense(self.data[idx]), dtype=jnp.float32)
++        else:
++            batch_data = self.data[jnp.asarray(idx)]
++        batch_labels = self.labels[jnp.asarray(idx)]
++        batch_pert_labels = [self.pert_labels[i] for i in idx]
+         return batch_data, batch_labels, batch_pert_labels
+ 
+ 
+@@ -290,9 +295,10 @@ class MLPClassifierSpace(PerturbationSpace):
+     def compute(
+         self,
+         adata: AnnData,
+-        target_col: str = "perturbations",
+-        layer_key: str = None,
+-        hidden_dim: list[int] = None,
++        target_col: str = "perturbation",
++        layer_key: str | None = None,
++        embedding_key: str | None = None,
++        hidden_dim: list[int] | None = None,
+         dropout: float = 0.0,
+         batch_norm: bool = True,
+         batch_size: int = 128,
+@@ -304,19 +310,19 @@ def compute(
+         lr: float = 1e-4,
+         seed: int = 42,
+     ) -> AnnData:
+-        """Creates cell embeddings by training a MLP classifier model to distinguish between perturbations.
++        """Creates a perturbation embedding by training a MLP classifier model to distinguish between perturbations.
+ 
+         A model is created using the specified parameters (hidden_dim, dropout, batch_norm). Further parameters such as
+         the number of classes to predict (number of perturbations) are obtained from the provided AnnData object directly.
+         Dataloaders that take into account class imbalances are created. Next, the model is trained and tested, using the
+-        GPU if available. The embeddings are obtained by passing the data through the model and extracting the values in
+-        the last layer of the MLP. You will get one embedding per cell, so be aware that you might need to apply another
+-        perturbation space to aggregate the embeddings per perturbation.
++        GPU if available. The penultimate-layer activations are extracted for every cell and averaged per perturbation,
++        yielding one embedding per perturbation.
+ 
+         Args:
+             adata: AnnData object of size cells x genes
+-            target_col: .obs column that stores the perturbations.
++            target_col: `.obs` column that stores the label of the perturbation applied to each cell.
+             layer_key: Layer in adata to use.
++            embedding_key: `.obsm` embedding to train the classifier on. Mutually exclusive with layer_key.
+             hidden_dim: List of number of neurons in each hidden layers of the neural network.
+                 For instance, [512, 256] will create a neural network with two hidden layers, the first with 512 neurons and the second with 256 neurons.
+             dropout: Amount of dropout applied, constant for all layers.
+@@ -334,38 +340,53 @@ def compute(
+             seed: Random seed for reproducibility.
+ 
+         Returns:
+-            AnnData whose `X` attribute is the perturbation embedding and whose .obs['perturbations'] are the names of the perturbations.
+-            The AnnData will have shape (n_cells, n_features) where n_features is the number of features in the last layer of the MLP.
++            AnnData with one observation per perturbation, the averaged penultimate-layer embedding in `.X` and the perturbation labels in `.obs[target_col]`.
+ 
+         Examples:
+             >>> import pertpy as pt
+             >>> adata = pt.dt.norman_2019()
+             >>> dcs = pt.tl.MLPClassifierSpace()
+-            >>> cell_embeddings = dcs.compute(adata, target_col="perturbation_name")
++            >>> pert_embeddings = dcs.compute(adata, target_col="perturbation_name")
+         """
+         if layer_key is not None and layer_key not in adata.layers:
+             raise ValueError(f"Layer key {layer_key} not found in adata.")
+ 
++        if embedding_key is not None and embedding_key not in adata.obsm:
++            raise ValueError(f"Embedding key {embedding_key} not found in adata.obsm.")
++
++        if layer_key is not None and embedding_key is not None:
++            raise ValueError("Cannot specify both layer_key and embedding_key.")
++
+         if target_col not in adata.obs:
+             raise ValueError(f"Column {target_col!r} does not exist in the .obs attribute.")
+ 
+         if hidden_dim is None:
+             hidden_dim = [512]
+ 
++        if embedding_key is not None:
++            work = AnnData(X=adata.obsm[embedding_key])
++            work.obs_names = adata.obs_names
++            work.obs = adata.obs.copy()
++            adata = work
++            layer_key = None
++        else:
++            adata = adata.copy()
++
+         # Labels are strings, one hot encoding for classification
+         n_classes = len(adata.obs[target_col].unique())
+         labels = to_dense(adata.obs[target_col]).reshape(-1, 1)
+         encoder = OneHotEncoder()
+         encoded_labels = encoder.fit_transform(labels).toarray()
+-        adata = adata.copy()
+         adata.obsm["encoded_perturbations"] = encoded_labels.astype(np.float32)
+ 
+         X = list(range(adata.n_obs))
+         y = adata.obs[target_col]
+ 
+-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_split_size, stratify=y)
++        X_train, X_test, y_train, y_test = train_test_split(
++            X, y, test_size=test_split_size, stratify=y, random_state=seed
++        )
+         X_train, X_val, y_train, y_val = train_test_split(
+-            X_train, y_train, test_size=validation_split_size, stratify=y_train
++            X_train, y_train, test_size=validation_split_size, stratify=y_train, random_state=seed
+         )
+ 
+         train_dataset = JAXDataset(
+@@ -453,22 +474,18 @@ def compute(
+             embeddings_list.append(batch_embeddings)
+             labels_list.extend(batch_pert_labels)
+ 
+-        all_embeddings = jnp.concatenate(embeddings_list, axis=0)
++        all_embeddings = np.asarray(jnp.concatenate(embeddings_list, axis=0))
+ 
+-        pert_adata = AnnData(X=np.array(all_embeddings))
+-        pert_adata.obs["perturbations"] = labels_list
++        # Average the per-cell embeddings within each perturbation to obtain one embedding per perturbation.
++        cell_embeddings = pd.DataFrame(all_embeddings)
++        cell_embeddings[target_col] = [str(label) for label in labels_list]
++        aggregated = cell_embeddings.groupby(target_col, observed=True).mean()
+ 
+-        adata_obs = adata.obs.reset_index(drop=True)
+-        if "perturbations" in adata_obs.columns:
+-            adata_obs = adata_obs.drop("perturbations", axis=1)
++        pert_adata = AnnData(X=aggregated.to_numpy(dtype=np.float32))
++        pert_adata.obs_names = aggregated.index.astype(str)
++        pert_adata.obs[target_col] = pd.Categorical(aggregated.index.astype(str))
+ 
+-        obs_subset = adata_obs.iloc[: len(pert_adata.obs)].copy()
+-        cols_to_add = [col for col in obs_subset.columns if col not in ["perturbations", "encoded_perturbations"]]
+-        new_cols_data = {col: obs_subset[col].values for col in cols_to_add}
+-
+-        if new_cols_data:
+-            pert_adata.obs = pd.concat(
+-                [pert_adata.obs, pd.DataFrame(new_cols_data, index=pert_adata.obs.index)], axis=1
+-            )
++        _carry_constant_obs(pert_adata, adata.obs, target_col)
++        pert_adata.obs[target_col] = pert_adata.obs[target_col].astype("category")
+ 
+         return pert_adata
+diff --git a/pertpy/tools/_perturbation_space/_perturbation_space.py b/pertpy/tools/_perturbation_space/_perturbation_space.py
+index ea25dae5..21d7ae83 100644
+--- a/pertpy/tools/_perturbation_space/_perturbation_space.py
++++ b/pertpy/tools/_perturbation_space/_perturbation_space.py
+@@ -1,7 +1,8 @@
+ from __future__ import annotations
+ 
++import contextlib
+ import warnings
+-from typing import TYPE_CHECKING
++from typing import TYPE_CHECKING, Literal
+ 
+ import numpy as np
+ import pandas as pd
+@@ -13,6 +14,16 @@
+ if TYPE_CHECKING:
+     from collections.abc import Callable, Iterable
+ 
++    from pertpy._types import RandomStateLike
++    from pertpy.tools._distances._distances import Metric
++
++
++def _sklearn_random_state(random_state: RandomStateLike) -> int | np.random.RandomState | None:
++    """Normalize a random state to something scikit-learn accepts (an int, a ``RandomState`` or ``None``)."""
++    if isinstance(random_state, np.random.Generator):
++        return int(random_state.integers(np.iinfo(np.int32).max))
++    return random_state
++
+ 
+ def _resolve_matrix(adata: AnnData, *, layer_key: str | None, embedding_key: str | None) -> np.ndarray:
+     """Pick the cell-by-feature matrix from a layer, an obsm embedding, or ``.X``.
+@@ -32,6 +43,40 @@ def _resolve_matrix(adata: AnnData, *, layer_key: str | None, embedding_key: str
+     return np.asarray(adata.X)
+ 
+ 
++def _constant_obs_per_group(obs: pd.DataFrame, target_col: str) -> pd.DataFrame:
++    """Collapse ``obs`` to one row per ``target_col`` value, keeping only columns constant within every group.
++
++    Columns that vary within any group are dropped so the result can be safely mapped back onto a perturbation-level AnnData.
++    """
++    grouped = obs.groupby(target_col, observed=True).agg(
++        lambda values: next(iter(set(values))) if len(set(values)) == 1 else np.nan
++    )
++    return grouped.loc[:, ~grouped.isna().any()]
++
++
++def _carry_constant_obs(ps_adata: AnnData, source_obs: pd.DataFrame, target_col: str) -> None:
++    """Copy every ``source_obs`` column that is constant within each ``target_col`` group onto ``ps_adata``."""
++    extra = _constant_obs_per_group(source_obs, target_col)
++    for col in extra.columns:
++        if col == target_col:
++            continue
++        ps_adata.obs[col] = ps_adata.obs[target_col].map(extra[col].to_dict())
++
++
++def _vector_distance(u: np.ndarray, v: np.ndarray, metric: str) -> float:
++    """Distance between two 1D perturbation vectors."""
++    if metric == "euclidean":
++        return float(np.linalg.norm(u - v))
++    if metric == "cosine":
++        denom = float(np.linalg.norm(u) * np.linalg.norm(v))
++        return 1.0 - float(np.dot(u, v)) / denom if denom else float("nan")
++    if metric == "pearson":
++        if u.std() == 0 or v.std() == 0:
++            return float("nan")
++        return 1.0 - float(np.corrcoef(u, v)[0, 1])
++    raise ValueError(f"Unknown metric {metric!r}. Choose from 'euclidean', 'cosine', 'pearson'.")
++
++
+ def _subtract_control_mean(
+     matrix: np.ndarray,
+     control_mask: np.ndarray,
+@@ -69,16 +114,16 @@ class PerturbationSpace:
+     def __init__(self):
+         self.control_diff_computed = False
+ 
+-    def compute_control_diff(  # type: ignore
++    def compute_control_diff(
+         self,
+         adata: AnnData,
+         *,
+         target_col: str = "perturbation",
+-        group_col: str = None,
++        group_col: str | None = None,
+         reference_key: str = "control",
+-        layer_key: str = None,
++        layer_key: str | None = None,
+         new_layer_key: str = "control_diff",
+-        embedding_key: str = None,
++        embedding_key: str | None = None,
+         new_embedding_key: str = "control_diff",
+         all_data: bool = False,
+         copy: bool = True,
+@@ -401,3 +446,248 @@ def label_transfer(
+         uncertainty = np.zeros(adata.n_obs)
+         uncertainty[target_cells] = entropy(weighted_label_occurence.drop(target_val, axis=1)[target_cells], axis=1)
+         adata.obs[column_uncertainty_score_key] = uncertainty
++
++    def nearest_perturbations(
++        self,
++        adata: AnnData,
++        perturbation: str,
++        *,
++        target_col: str = "perturbation",
++        n_neighbors: int = 10,
++        layer_key: str | None = None,
++        embedding_key: str | None = None,
++        metric: str = "euclidean",
++    ) -> pd.DataFrame:
++        """Rank perturbations by their proximity to a query perturbation in a perturbation space.
++
++        Operates on a perturbation-level AnnData (one observation per perturbation), i.e. the output of any ``compute``.
++        Useful for discovering perturbations with a similar mechanism of action.
++        If ``adata.obsp["distances"]`` is present (as produced by :class:`~pertpy.tools.DistanceSpace`) and no representation is requested explicitly, those precomputed distances are used directly.
++
++        Args:
++            adata: Perturbation-level AnnData indexed by perturbation.
++            perturbation: The query perturbation to find neighbors for.
++            target_col: `.obs` column identifying each perturbation.
++            n_neighbors: Number of nearest perturbations to return.
++            layer_key: Layer to compute distances from.
++            embedding_key: `.obsm` embedding to compute distances from.
++            metric: Distance metric passed to :func:`sklearn.metrics.pairwise_distances`.
++
++        Returns:
++            DataFrame indexed by perturbation with a ``distance`` column, sorted ascending and excluding the query.
++
++        Examples:
++            >>> import pertpy as pt
++            >>> adata = pt.dt.norman_2019()
++            >>> ps = pt.tl.PseudobulkSpace()
++            >>> ps_adata = ps.compute(adata, target_col="perturbation_name")
++            >>> neighbors = ps.nearest_perturbations(ps_adata, "CBL+CNN1", target_col="perturbation_name")
++        """
++        names = (
++            adata.obs[target_col].astype(str).to_numpy()
++            if target_col in adata.obs
++            else adata.obs_names.to_numpy().astype(str)
++        )
++        matches = np.flatnonzero(names == str(perturbation))
++        if matches.size == 0:
++            raise ValueError(f"Perturbation {perturbation!r} not found in adata.obs[{target_col!r}].")
++        query_idx = int(matches[0])
++
++        if layer_key is None and embedding_key is None and "distances" in adata.obsp:
++            distances = np.asarray(adata.obsp["distances"])[query_idx]
++        else:
++            from sklearn.metrics import pairwise_distances
++
++            coords = _resolve_matrix(adata, layer_key=layer_key, embedding_key=embedding_key)
++            distances = pairwise_distances(coords[[query_idx]], coords, metric=metric)[0]
++
++        keep = np.arange(len(names)) != query_idx
++        result = pd.DataFrame({"distance": distances[keep]}, index=names[keep])
++        return result.sort_values("distance").head(n_neighbors)
++
++    def evaluate_combinations(
++        self,
++        adata: AnnData,
++        *,
++        combinations: Iterable[str] | None = None,
++        target_col: str = "perturbation",
++        reference_key: str = "control",
++        metric: Literal["pearson", "cosine", "euclidean"] = "pearson",
++        sep: str = "+",
++    ) -> pd.DataFrame:
++        """Score how well an additive model predicts combination perturbations.
++
++        For every combination ``"A+B"`` whose components ``A`` and ``B`` are each present as single perturbations, the additive prediction ``effect(A) + effect(B)`` is compared against the measured combination effect, where effects are taken relative to ``reference_key``.
++        A small distance indicates additive, non-interacting perturbations, whereas a large deviation flags a genetic or pharmacological interaction.
++
++        Args:
++            adata: Perturbation-level AnnData indexed by perturbation (one observation per perturbation).
++            combinations: Combination names to evaluate. If None, every ``obs_name`` containing ``sep`` whose components are all present as singles is used.
++            target_col: `.obs` column identifying each perturbation.
++            reference_key: Control perturbation subtracted to obtain effects. If absent, values are used as-is.
++            metric: Distance between predicted and measured combination effects.
++            sep: Separator between components in combination names.
++
++        Returns:
++            DataFrame indexed by combination with ``distance``, ``predicted_magnitude`` and ``measured_magnitude`` columns, sorted by ascending distance.
++
++        Examples:
++            >>> import pertpy as pt
++            >>> adata = pt.dt.norman_2019()
++            >>> ps = pt.tl.PseudobulkSpace()
++            >>> ps_adata = ps.compute(adata, target_col="perturbation_name")
++            >>> scores = ps.evaluate_combinations(ps_adata, target_col="perturbation_name", reference_key="control")
++        """
++        names = adata.obs_names.astype(str)
++        matrix = np.asarray(adata.X, dtype=float)
++        vectors = {name: matrix[i] for i, name in enumerate(names)}
++
++        effects = (
++            {name: vec - vectors[reference_key] for name, vec in vectors.items()}
++            if reference_key in vectors
++            else vectors
++        )
++
++        if combinations is None:
++            combinations = [n for n in names if sep in n and all(part in vectors for part in n.split(sep))]
++        combinations = list(combinations)
++        if not combinations:
++            raise ValueError("No evaluable combinations found; provide `combinations` explicitly or check `sep`.")
++
++        rows: dict[str, dict[str, float]] = {}
++        for combo in combinations:
++            if combo not in effects:
++                raise ValueError(f"Combination {combo!r} not found in adata.")
++            components = combo.split(sep)
++            missing = [part for part in components if part not in effects]
++            if missing:
++                raise ValueError(f"Components {missing} of {combo!r} are not present as single perturbations.")
++            predicted = np.sum([effects[part] for part in components], axis=0)
++            measured = effects[combo]
++            rows[combo] = {
++                "distance": _vector_distance(predicted, measured, metric),
++                "predicted_magnitude": float(np.linalg.norm(predicted)),
++                "measured_magnitude": float(np.linalg.norm(measured)),
++            }
++
++        return pd.DataFrame.from_dict(rows, orient="index").sort_values("distance")
++
++    def dose_response(
++        self,
++        adata: AnnData,
++        *,
++        target_col: str = "perturbation",
++        dose_col: str = "dose",
++        reference_key: str = "control",
++        metric: Metric = "edistance",
++        layer_key: str | None = None,
++        embedding_key: str | None = None,
++        **kwargs,
++    ) -> pd.DataFrame:
++        """Quantify the effect size of each perturbation as a function of dose.
++
++        For every (perturbation, dose) group the statistical distance to ``reference_key`` is computed in the chosen representation using :class:`~pertpy.tools.Distance`.
++        Operates on cell-level data, since distances are defined between groups of cells.
++
++        Args:
++            adata: Cell-level AnnData.
++            target_col: `.obs` column with the perturbation label.
++            dose_col: `.obs` column with the (numeric) dose.
++            reference_key: Control perturbation all doses are compared against.
++            metric: Distance metric passed to :class:`~pertpy.tools.Distance`.
++            layer_key: Layer to compute distances from.
++            embedding_key: `.obsm` embedding to compute distances from.
++            kwargs: Passed to :meth:`~pertpy.tools.Distance.onesided_distances`.
++
++        Returns:
++            Tidy DataFrame with ``perturbation``, ``dose`` and ``distance`` columns, sorted by perturbation then dose.
++
++        Examples:
++            >>> import pertpy as pt
++            >>> adata = pt.dt.srivatsan_2020_sciplex2()
++            >>> ps = pt.tl.PseudobulkSpace()
++            >>> curves = ps.dose_response(adata, dose_col="dose_value", embedding_key="X_pca")
++        """
++        for col in (target_col, dose_col):
++            if col not in adata.obs:
++                raise ValueError(f"Column {col!r} does not exist in the .obs attribute.")
++        from pertpy.tools._distances._distances import Distance
++
++        sep = "\x1f"
++        is_control = (adata.obs[target_col] == reference_key).to_numpy()
++        group = adata.obs[target_col].astype(str).str.cat(adata.obs[dose_col].astype(str), sep=sep)
++        group = group.mask(is_control, reference_key)
++        grouped = adata.copy()
++        grouped.obs["_dose_group"] = pd.Categorical(group)
++
++        distance = Distance(metric=metric, layer_key=layer_key, obsm_key=embedding_key)
++        dists = distance.onesided_distances(
++            grouped, groupby="_dose_group", selected_group=reference_key, show_progressbar=False, **kwargs
++        )
++        if isinstance(dists, tuple):
++            dists = dists[0]
++
++        records = []
++        for label, value in dists.items():
++            if label == reference_key:
++                continue
++            perturbation, _, dose = str(label).partition(sep)
++            records.append({"perturbation": perturbation, "dose": dose, "distance": float(value)})
++        result = pd.DataFrame.from_records(records)
++        with warnings.catch_warnings():
++            warnings.simplefilter("ignore")
++            with contextlib.suppress(ValueError, TypeError):
++                result["dose"] = pd.to_numeric(result["dose"])
++        return result.sort_values(["perturbation", "dose"]).reset_index(drop=True)
++
++    def plot_similarity(  # pragma: no cover
++        self,
++        adata: AnnData,
++        *,
++        target_col: str = "perturbation",
++        layer_key: str | None = None,
++        embedding_key: str | None = None,
++        metric: str = "euclidean",
++        cmap: str = "viridis",
++        **kwargs,
++    ):
++        """Plot a clustered heatmap of pairwise distances between perturbations.
++
++        Uses ``adata.obsp["distances"]`` when present (e.g. from :class:`~pertpy.tools.DistanceSpace`) and otherwise computes pairwise distances in the chosen representation.
++
++        Args:
++            adata: Perturbation-level AnnData indexed by perturbation.
++            target_col: `.obs` column identifying each perturbation.
++            layer_key: Layer to compute distances from.
++            embedding_key: `.obsm` embedding to compute distances from.
++            metric: Distance metric passed to :func:`sklearn.metrics.pairwise_distances`.
++            cmap: Matplotlib colormap.
++            kwargs: Passed to :func:`seaborn.clustermap`.
++
++        Returns:
++            The grid returned by :func:`seaborn.clustermap`.
++
++        Examples:
++            >>> import pertpy as pt
++            >>> adata = pt.dt.norman_2019()
++            >>> ds = pt.tl.DistanceSpace()
++            >>> ds_adata = ds.compute(adata, target_col="perturbation_name", metric="edistance")
++            >>> ds.plot_similarity(ds_adata, target_col="perturbation_name")
++        """
++        import seaborn as sns
++
++        names = (
++            adata.obs[target_col].astype(str).to_numpy()
++            if target_col in adata.obs
++            else adata.obs_names.to_numpy().astype(str)
++        )
++        if layer_key is None and embedding_key is None and "distances" in adata.obsp:
++            distances = np.asarray(adata.obsp["distances"])
++        else:
++            from sklearn.metrics import pairwise_distances
++
++            coords = _resolve_matrix(adata, layer_key=layer_key, embedding_key=embedding_key)
++            distances = pairwise_distances(coords, metric=metric)
++        frame = pd.DataFrame(distances, index=names, columns=names)
++
++        return sns.clustermap(frame, cmap=cmap, **kwargs)
+diff --git a/pertpy/tools/_perturbation_space/_simple.py b/pertpy/tools/_perturbation_space/_simple.py
+index 4cb0c007..063d9a2b 100644
+--- a/pertpy/tools/_perturbation_space/_simple.py
++++ b/pertpy/tools/_perturbation_space/_simple.py
+@@ -1,15 +1,25 @@
+ from __future__ import annotations
+ 
+-from typing import Literal
++from typing import TYPE_CHECKING, Literal
+ 
+ import numpy as np
+ import pandas as pd
+ import scanpy as sc
+ from anndata import AnnData
+-from sklearn.cluster import DBSCAN, KMeans
++from sklearn.cluster import HDBSCAN, KMeans
+ 
++from pertpy._logger import logger
+ from pertpy.tools._perturbation_space._clustering import ClusteringSpace
+-from pertpy.tools._perturbation_space._perturbation_space import PerturbationSpace, _resolve_matrix
++from pertpy.tools._perturbation_space._perturbation_space import (
++    PerturbationSpace,
++    _carry_constant_obs,
++    _resolve_matrix,
++)
++
++if TYPE_CHECKING:
++    from collections.abc import Mapping, Sequence
++
++    from pertpy.tools._distances._distances import Metric
+ 
+ 
+ class CentroidSpace(PerturbationSpace):
+@@ -19,10 +29,10 @@ def compute(
+         self,
+         adata: AnnData,
+         target_col: str = "perturbation",
+-        layer_key: str = None,
+-        embedding_key: str = "X_umap",
++        layer_key: str | None = None,
++        embedding_key: str | None = "X_umap",
+         keep_obs: bool = True,
+-    ) -> AnnData:  # type: ignore
++    ) -> AnnData:
+         """Computes the centroids of a pre-computed embedding such as UMAP.
+ 
+         Args:
+@@ -71,14 +81,8 @@ def compute(
+         if embedding_key is not None:
+             ps_adata.obsm[embedding_key] = X
+ 
+-        if keep_obs:  # Save the values of the obs columns of interest in the ps_adata object
+-            obs_df = adata.obs.groupby(target_col, observed=True).agg(
+-                lambda pert_group: np.nan if len(set(pert_group)) != 1 else next(iter(set(pert_group)))
+-            )
+-            for obs_name in obs_df.columns:
+-                if not obs_df[obs_name].isnull().values.any():
+-                    mapping = {pert: obs_df.loc[pert][obs_name] for pert in index}
+-                    ps_adata.obs[obs_name] = ps_adata.obs[target_col].map(mapping)
++        if keep_obs:
++            _carry_constant_obs(ps_adata, adata.obs, target_col)
+ 
+         ps_adata.obs[target_col] = ps_adata.obs[target_col].astype("category")
+ 
+@@ -92,11 +96,11 @@ def compute(
+         self,
+         adata: AnnData,
+         target_col: str = "perturbation",
+-        groups_col: str = None,
+-        layer_key: str = None,
+-        embedding_key: str = None,
++        groups_col: str | None = None,
++        layer_key: str | None = None,
++        embedding_key: str | None = None,
+         mode: Literal["count_nonzero", "mean", "sum", "var", "median"] = "sum",
+-    ) -> AnnData:  # type: ignore
++    ) -> AnnData:
+         """Determines pseudobulks of an AnnData object.
+ 
+         Args:
+@@ -163,6 +167,130 @@ def compute(
+         return ps_adata
+ 
+ 
++class DistanceSpace(PerturbationSpace):
++    """Represents each perturbation by its statistical distance to every other perturbation."""
++
++    def compute(
++        self,
++        adata: AnnData,
++        target_col: str = "perturbation",
++        metric: Metric = "edistance",
++        layer_key: str | None = None,
++        embedding_key: str | None = None,
++        groups: Sequence[str] | None = None,
++        **kwargs,
++    ) -> AnnData:
++        """Computes a perturbation space from pairwise distances between perturbations.
++
++        Wraps :meth:`~pertpy.tools.Distance.pairwise` so that any distance metric available in :class:`~pertpy.tools.Distance` defines a perturbation space.
++        Each perturbation is represented by its vector of distances to all perturbations, and the full distance matrix is additionally stored in ``.obsp["distances"]`` so it can feed clustering (``metric="precomputed"``), :meth:`nearest_perturbations` and :meth:`plot_similarity` directly.
++
++        Args:
++            adata: Anndata object of size cells x genes.
++            target_col: `.obs` column that stores the label of the perturbation applied to each cell.
++            metric: Distance metric, passed to :class:`~pertpy.tools.Distance`.
++            layer_key: If specified, the distances are computed on this layer. Otherwise `.X` or the embedding is used.
++            embedding_key: `.obsm` embedding to compute distances from. Mutually exclusive with `layer_key`; defaults to `X_pca` internally when neither is given.
++            groups: Subset of perturbations to compute distances for. If None, all perturbations are used.
++            **kwargs: Passed to :meth:`~pertpy.tools.Distance.pairwise`.
++
++        Returns:
++            AnnData with one observation per perturbation whose `.X` and `.obsp["distances"]` store the pairwise distance matrix.
++
++        Examples:
++            >>> import pertpy as pt
++            >>> mdata = pt.dt.papalexi_2021()
++            >>> ds = pt.tl.DistanceSpace()
++            >>> ds_adata = ds.compute(mdata["rna"], target_col="gene_target", metric="edistance", embedding_key="X_pca")
++        """
++        if target_col not in adata.obs:
++            raise ValueError(f"Obs {target_col!r} does not exist in the .obs attribute.")
++
++        from pertpy.tools._distances._distances import Distance
++
++        distance = Distance(metric=metric, layer_key=layer_key, obsm_key=embedding_key)
++        df = distance.pairwise(
++            adata, groupby=target_col, groups=None if groups is None else list(groups), show_progressbar=False, **kwargs
++        )
++        if isinstance(df, tuple):
++            df = df[0]
++
++        index = df.index.astype(str)
++        matrix = df.to_numpy(dtype=float)
++        ps_adata = AnnData(X=matrix)
++        ps_adata.obs_names = index
++        ps_adata.var_names = index
++        ps_adata.obsp["distances"] = matrix
++        ps_adata.obs[target_col] = pd.Categorical(df.index)
++
++        _carry_constant_obs(ps_adata, adata.obs, target_col)
++        ps_adata.obs[target_col] = ps_adata.obs[target_col].astype("category")
++
++        return ps_adata
++
++
++class EmbeddingSpace(PerturbationSpace):
++    """Builds a perturbation space from a precomputed per-perturbation embedding."""
++
++    def compute(
++        self,
++        adata: AnnData,
++        embedding: Mapping[str, Sequence[float]] | pd.DataFrame,
++        target_col: str = "perturbation",
++    ) -> AnnData:
++        """Aligns an external per-perturbation embedding to the perturbations present in the data.
++
++        Useful for bringing in perturbation representations that are defined outside the expression matrix, such as gene or drug embeddings from foundation models (scGPT, Geneformer, UCE), knowledge graphs or chemical fingerprints.
++        Per-cell embeddings stored in `.obsm` do not need this and can be aggregated with :class:`PseudobulkSpace` or :class:`CentroidSpace` via `embedding_key`.
++
++        Args:
++            adata: AnnData whose `.obs[target_col]` holds the perturbation labels to align against.
++            embedding: Mapping from perturbation name to embedding vector, or a DataFrame indexed by perturbation name.
++            target_col: `.obs` column that stores the label of the perturbation applied to each cell.
++
++        Returns:
++            AnnData with one observation per perturbation present in both the data and the embedding.
++
++        Examples:
++            >>> import pertpy as pt
++            >>> import pandas as pd
++            >>> adata = pt.dt.norman_2019()
++            >>> gene_embedding = pd.DataFrame(...)  # index: perturbation names, values: embedding
++            >>> es = pt.tl.EmbeddingSpace()
++            >>> es_adata = es.compute(adata, gene_embedding, target_col="perturbation_name")
++        """
++        if target_col not in adata.obs:
++            raise ValueError(f"Obs {target_col!r} does not exist in the .obs attribute.")
++
++        emb_df = (
++            embedding
++            if isinstance(embedding, pd.DataFrame)
++            else pd.DataFrame.from_dict(dict(embedding), orient="index")
++        )
++        emb_df = emb_df.copy()
++        emb_df.index = emb_df.index.astype(str)
++
++        present = pd.Index(adata.obs[target_col].astype(str).unique())
++        keep = present.intersection(emb_df.index)
++        if keep.empty:
++            raise ValueError(f"No overlap between perturbations in .obs[{target_col!r}] and the embedding index.")
++        missing = present.difference(emb_df.index)
++        if len(missing):
++            logger.warning(
++                f"{len(missing)} perturbations are missing from the embedding and were dropped, e.g. {list(missing[:5])}."
++            )
++
++        emb_df = emb_df.loc[keep]
++        ps_adata = AnnData(X=emb_df.to_numpy(dtype=float))
++        ps_adata.obs_names = keep
++        ps_adata.obs[target_col] = pd.Categorical(keep)
++
++        _carry_constant_obs(ps_adata, adata.obs, target_col)
++        ps_adata.obs[target_col] = ps_adata.obs[target_col].astype("category")
++
++        return ps_adata
++
++
+ def _run_clustering(
+     estimator,
+     adata: AnnData,
+@@ -173,7 +301,7 @@ def _run_clustering(
+     copy: bool,
+     return_object: bool,
+ ) -> tuple[AnnData, object] | AnnData:
+-    """Shared body for KMeansSpace/DBSCANSpace — resolve coords, fit, write labels."""
++    """Shared body for KMeansSpace/HDBSCANSpace — resolve coords, fit, write labels."""
+     if copy:
+         adata = adata.copy()
+     coords = _resolve_matrix(adata, layer_key=layer_key, embedding_key=embedding_key)
+@@ -185,11 +313,11 @@ def _run_clustering(
+ class KMeansSpace(ClusteringSpace):
+     """Computes K-Means clustering of the expression values."""
+ 
+-    def compute(  # type: ignore
++    def compute(
+         self,
+         adata: AnnData,
+-        layer_key: str = None,
+-        embedding_key: str = None,
++        layer_key: str | None = None,
++        embedding_key: str | None = None,
+         cluster_key: str = "k-means",
+         copy: bool = False,
+         return_object: bool = False,
+@@ -227,20 +355,22 @@ def compute(  # type: ignore
+         )
+ 
+ 
+-class DBSCANSpace(ClusteringSpace):
+-    """Cluster the given data using DBSCAN."""
++class HDBSCANSpace(ClusteringSpace):
++    """Cluster the given data using HDBSCAN."""
+ 
+-    def compute(  # type: ignore
++    def compute(
+         self,
+         adata: AnnData,
+-        layer_key: str = None,
+-        embedding_key: str = None,
+-        cluster_key: str = "dbscan",
++        layer_key: str | None = None,
++        embedding_key: str | None = None,
++        cluster_key: str = "hdbscan",
+         copy: bool = True,
+         return_object: bool = False,
+         **kwargs,
+     ) -> tuple[AnnData, object] | AnnData:
+-        """Computes a clustering using Density-based spatial clustering of applications (DBSCAN).
++        """Computes a clustering using hierarchical density-based spatial clustering of applications (HDBSCAN).
++
++        HDBSCAN extends DBSCAN by converting it into a hierarchical clustering algorithm, removing the need to pick a single density threshold (`eps`) and handling clusters of varying density.
+ 
+         Args:
+             adata: Anndata object of size cells x genes
+@@ -249,7 +379,7 @@ def compute(  # type: ignore
+             cluster_key: name of the .obs column to store the cluster labels.
+             copy: if True returns a new Anndata of same size with the new column; otherwise it updates the initial adata
+             return_object: if True returns the clustering object
+-            **kwargs: Are passed to sklearn's DBSCAN.
++            **kwargs: Are passed to sklearn's HDBSCAN.
+ 
+         Returns:
+             If return_object is True, the adata and the clustering object is returned.
+@@ -258,11 +388,11 @@ def compute(  # type: ignore
+         Examples:
+             >>> import pertpy as pt
+             >>> mdata = pt.dt.papalexi_2021()
+-            >>> dbscan = pt.tl.DBSCANSpace()
+-            >>> dbscan_adata = dbscan.compute(mdata["rna"])
++            >>> hdbscan = pt.tl.HDBSCANSpace()
++            >>> hdbscan_adata = hdbscan.compute(mdata["rna"])
+         """
+         return _run_clustering(
+-            DBSCAN(**kwargs),
++            HDBSCAN(**kwargs),
+             adata,
+             layer_key=layer_key,
+             embedding_key=embedding_key,
+diff --git a/tests/tools/_perturbation_space/test_classifier_spaces.py b/tests/tools/_perturbation_space/test_classifier_spaces.py
+new file mode 100644
+index 00000000..52311a1e
+--- /dev/null
++++ b/tests/tools/_perturbation_space/test_classifier_spaces.py
+@@ -0,0 +1,64 @@
++import numpy as np
++import pandas as pd
++import pytest
++import scanpy as sc
++import scipy.sparse as sp
++from anndata import AnnData
++
++import pertpy as pt
++
++
++@pytest.fixture
++def adata(rng):
++    labels = np.array(["control", "target1", "target2"]).repeat(30)
++    centers = {"control": 0.0, "target1": 5.0, "target2": -5.0}
++    X = np.vstack([rng.normal(centers[label], 0.4, size=10) for label in labels]).astype(np.float32)
++    obs = pd.DataFrame(
++        {
++            "perturbation": labels,
++            "batch": "b0",  # constant within each perturbation -> carried over
++            "MoA": ["Growth" if label == "target1" else "Unknown" for label in labels],  # constant within group
++            "partial": [np.nan if label == "control" else "annotated" for label in labels],  # varies -> dropped
++        }
++    )
++    adata = AnnData(X, obs=obs)
++    sc.pp.pca(adata, n_comps=5)
++    return adata
++
++
++def test_lr_classifier_space_is_perturbation_level(adata):
++    ps = pt.tl.LRClassifierSpace()
++    pert_adata = ps.compute(adata, embedding_key="X_pca", target_col="perturbation")
++
++    assert pert_adata.n_obs == 3
++    assert set(pert_adata.obs_names) == {"control", "target1", "target2"}
++    assert "classifier_score" in pert_adata.obs
++    # constant-within-group obs are carried over, ambiguous ones dropped
++    assert pert_adata.obs.loc["target1", "MoA"] == "Growth"
++    assert "partial" not in pert_adata.obs
++
++
++def test_lr_classifier_space_reproducible_and_accepts_generator(adata):
++    ps = pt.tl.LRClassifierSpace()
++    first = ps.compute(adata, embedding_key="X_pca", random_state=0)
++    second = ps.compute(adata, embedding_key="X_pca", random_state=0)
++    np.testing.assert_allclose(first.X, second.X)
++
++    from_generator = ps.compute(adata, embedding_key="X_pca", random_state=np.random.default_rng(0))
++    assert from_generator.n_obs == 3
++
++
++def test_mlp_classifier_space_is_perturbation_level(adata):
++    ps = pt.tl.MLPClassifierSpace()
++    pert_adata = ps.compute(adata, target_col="perturbation", max_epochs=3, hidden_dim=[16])
++
++    assert pert_adata.n_obs == 3
++    assert set(pert_adata.obs_names) == {"control", "target1", "target2"}
++    assert pert_adata.obs.loc["target1", "MoA"] == "Growth"
++
++
++def test_mlp_classifier_space_sparse(adata):
++    adata.X = sp.csr_matrix(adata.X)
++    ps = pt.tl.MLPClassifierSpace()
++    pert_adata = ps.compute(adata, target_col="perturbation", max_epochs=3, hidden_dim=[16])
++    assert pert_adata.n_obs == 3
+diff --git a/tests/tools/_perturbation_space/test_discriminator_classifiers.py b/tests/tools/_perturbation_space/test_discriminator_classifiers.py
+deleted file mode 100644
+index 843a7d36..00000000
+--- a/tests/tools/_perturbation_space/test_discriminator_classifiers.py
++++ /dev/null
+@@ -1,82 +0,0 @@
+-import numpy as np
+-import pandas as pd
+-import pytest
+-from anndata import AnnData
+-
+-import pertpy as pt
+-
+-
+-@pytest.fixture
+-def adata():
+-    X = np.zeros((20, 5), dtype=np.float32)
+-
+-    pert_index = [
+-        "control",
+-        "target1",
+-        "target1",
+-        "target2",
+-        "target2",
+-        "target1",
+-        "target1",
+-        "target2",
+-        "target2",
+-        "target2",
+-        "control",
+-        "target1",
+-        "target1",
+-        "target2",
+-        "target2",
+-        "target1",
+-        "target1",
+-        "target2",
+-        "target2",
+-        "target2",
+-    ]
+-
+-    for i, value in enumerate(pert_index):
+-        if value == "control":
+-            X[i, :] = 0
+-        elif value == "target1":
+-            X[i, :] = 10
+-        elif value == "target2":
+-            X[i, :] = 30
+-
+-    obs = pd.DataFrame({"perturbations": pert_index})
+-
+-    adata = AnnData(X, obs=obs)
+-
+-    # Add a obs annotations to the adata
+-    adata.obs["MoA"] = ["Growth" if pert == "target1" else "Unknown" for pert in adata.obs["perturbations"]]
+-    adata.obs["Partial Annotation"] = ["Anno1" if pert == "target2" else np.nan for pert in adata.obs["perturbations"]]
+-
+-    return adata
+-
+-
+-def test_mlp_classifier_space(adata):
+-    classifier_ps = pt.tl.MLPClassifierSpace()
+-    pert_embeddings = classifier_ps.compute(adata, hidden_dim=[128], max_epochs=2)
+-
+-    # The embeddings should cluster in 3 perfects clusters since the perturbations are easily separable
+-    ps = pt.tl.KMeansSpace()
+-    adata = ps.compute(pert_embeddings, n_clusters=3, copy=True)
+-    results = ps.evaluate_clustering(adata, true_label_col="perturbations", cluster_col="k-means")
+-    np.testing.assert_equal(len(results), 3)
+-    np.testing.assert_allclose(results["nmi"], 0.99, rtol=0.1)
+-    np.testing.assert_allclose(results["ari"], 0.99, rtol=0.1)
+-    np.testing.assert_allclose(results["asw"], 0.99, rtol=0.1)
+-
+-
+-def test_regression_classifier_space(adata):
+-    ps = pt.tl.LRClassifierSpace()
+-    pert_embeddings = ps.compute(adata)
+-
+-    assert pert_embeddings.shape == (3, 5)
+-    assert pert_embeddings.obs[pert_embeddings.obs["perturbations"] == "target1"]["MoA"].values == "Growth"
+-    assert "Partial Annotation" not in pert_embeddings.obs_names
+-    # The classifier should be able to distinguish control and target2 from the respective other two classes
+-    assert np.all(
+-        pert_embeddings.obs[pert_embeddings.obs["perturbations"].isin(["control", "target2"])][
+-            "classifier_score"
+-        ].values
+-        == 1.0
+-    )
+diff --git a/tests/tools/_perturbation_space/test_perturbation_space_extras.py b/tests/tools/_perturbation_space/test_perturbation_space_extras.py
+new file mode 100644
+index 00000000..3d1501e8
+--- /dev/null
++++ b/tests/tools/_perturbation_space/test_perturbation_space_extras.py
+@@ -0,0 +1,84 @@
++import numpy as np
++import pandas as pd
++import pytest
++import scanpy as sc
++from anndata import AnnData
++
++import pertpy as pt
++
++
++@pytest.fixture
++def adata(rng):
++    labels = np.array(["control", "A", "B"]).repeat(20)
++    centers = {"control": 0.0, "A": 5.0, "B": -5.0}
++    X = np.vstack([rng.normal(centers[label], 0.3, size=8) for label in labels])
++    adata = AnnData(X, obs=pd.DataFrame({"perturbation": labels}))
++    sc.pp.pca(adata, n_comps=5)
++    return adata
++
++
++def test_distance_space(adata):
++    ds = pt.tl.DistanceSpace()
++    ds_adata = ds.compute(adata, metric="euclidean", embedding_key="X_pca")
++
++    assert ds_adata.shape == (3, 3)
++    assert "distances" in ds_adata.obsp
++    np.testing.assert_allclose(np.diag(ds_adata.obsp["distances"]), 0.0, atol=1e-6)
++    # feeds directly into clustering
++    clustered = pt.tl.KMeansSpace().compute(ds_adata, n_clusters=3, copy=True, random_state=0)
++    assert clustered.obs["k-means"].nunique() == 3
++
++
++def test_nearest_perturbations(adata):
++    ds_adata = pt.tl.DistanceSpace().compute(adata, metric="euclidean", embedding_key="X_pca")
++    neighbors = pt.tl.DistanceSpace().nearest_perturbations(ds_adata, "A", n_neighbors=2)
++    assert list(neighbors.index) == ["control", "B"]  # control is closer to A than B
++
++
++def test_embedding_space(adata):
++    embedding = pd.DataFrame(np.eye(3), index=["A", "B", "control"])
++    es_adata = pt.tl.EmbeddingSpace().compute(adata, embedding, target_col="perturbation")
++    assert es_adata.shape == (3, 3)
++    assert set(es_adata.obs_names) == {"A", "B", "control"}
++
++    with pytest.raises(ValueError, match="No overlap"):
++        pt.tl.EmbeddingSpace().compute(adata, pd.DataFrame(np.eye(2), index=["X", "Y"]))
++
++
++def test_evaluate_combinations(rng):
++    dim = 6
++    eff = {"A": rng.normal(size=dim), "B": rng.normal(size=dim), "C": rng.normal(size=dim)}
++    rows = {
++        "control": np.zeros(dim),
++        "A": eff["A"],
++        "B": eff["B"],
++        "C": eff["C"],
++        "A+B": eff["A"] + eff["B"],  # perfectly additive
++        "A+C": eff["A"] + eff["C"] + rng.normal(0, 3, dim),  # interaction
++    }
++    ps_adata = AnnData(X=np.vstack(list(rows.values())))
++    ps_adata.obs_names = list(rows.keys())
++    ps_adata.obs["perturbation"] = pd.Categorical(list(rows.keys()))
++
++    result = pt.tl.PseudobulkSpace().evaluate_combinations(ps_adata, reference_key="control", metric="pearson")
++    assert set(result.index) == {"A+B", "A+C"}
++    assert result.loc["A+B", "distance"] < result.loc["A+C", "distance"]
++    np.testing.assert_allclose(result.loc["A+B", "distance"], 0.0, atol=1e-6)
++
++
++def test_dose_response(rng):
++    groups, doses = [], []
++    for pert in ["control", "drug"]:
++        for dose in [0.0] if pert == "control" else [1.0, 10.0, 100.0]:
++            groups += [pert] * 15
++            doses += [dose] * 15
++    groups = np.array(groups)
++    doses = np.array(doses, dtype=float)
++    X = rng.normal(0, 0.3, (len(groups), 8))
++    X[groups == "drug"] += (doses[groups == "drug"] / 10.0)[:, None]
++    adata = AnnData(X, obs=pd.DataFrame({"perturbation": groups, "dose": doses}))
++    sc.pp.pca(adata, n_comps=5)
++
++    curves = pt.tl.PseudobulkSpace().dose_response(adata, dose_col="dose", metric="euclidean", embedding_key="X_pca")
++    drug = curves[curves["perturbation"] == "drug"].sort_values("dose")
++    assert drug["distance"].is_monotonic_increasing
+diff --git a/tests/tools/_perturbation_space/test_simple_cluster_space.py b/tests/tools/_perturbation_space/test_simple_cluster_space.py
+index 03c84e14..cff847c4 100644
+--- a/tests/tools/_perturbation_space/test_simple_cluster_space.py
++++ b/tests/tools/_perturbation_space/test_simple_cluster_space.py
+@@ -5,49 +5,33 @@
+ import pertpy as pt
+ 
+ 
+-def test_clustering():
+-    X = np.zeros((10, 5))
+-
+-    pert_index = [
+-        "control",
+-        "target1",
+-        "target1",
+-        "target2",
+-        "target2",
+-        "target1",
+-        "target1",
+-        "target2",
+-        "target2",
+-        "target2",
+-    ]
+-
+-    for i, value in enumerate(pert_index):
+-        if value == "control":
+-            X[i, :] = 0
+-        elif value == "target1":
+-            X[i, :] = 10
+-        elif value == "target2":
+-            X[i, :] = 30
+-
+-    obs = pd.DataFrame({"perturbations": pert_index})
+-
+-    adata = AnnData(X, obs=obs)
+-
+-    # Compute clustering at observation level
++def _blobs(rng):
++    labels = np.array(["control", "target1", "target2"]).repeat(8)
++    centers = {"control": 0.0, "target1": 10.0, "target2": 30.0}
++    X = np.vstack([rng.normal(centers[label], 0.1, size=5) for label in labels])
++    return AnnData(X, obs=pd.DataFrame({"perturbations": labels}))
++
++
++def test_kmeans(rng):
++    adata = _blobs(rng)
+     ps = pt.tl.KMeansSpace()
+-    adata = ps.compute(adata, n_clusters=3, copy=True)
+-
+-    ps = pt.tl.DBSCANSpace()
+-    adata = ps.compute(adata, min_samples=1, copy=True)
+-
+-    results = ps.evaluate_clustering(adata, true_label_col="perturbations", cluster_col="k-means", metric="l1")
+-    np.testing.assert_equal(len(results), 3)
+-    np.testing.assert_allclose(results["nmi"], 0.99, rtol=0.1)
+-    np.testing.assert_allclose(results["ari"], 0.99, rtol=0.1)
+-    np.testing.assert_allclose(results["asw"], 0.99, rtol=0.1)
+-
+-    results = ps.evaluate_clustering(adata, true_label_col="perturbations", cluster_col="dbscan", metric="l1")
+-    np.testing.assert_equal(len(results), 3)
+-    np.testing.assert_allclose(results["nmi"], 0.99, rtol=0.1)
+-    np.testing.assert_allclose(results["ari"], 0.99, rtol=0.1)
+-    np.testing.assert_allclose(results["asw"], 0.99, rtol=0.1)
++    adata = ps.compute(adata, n_clusters=3, copy=True, random_state=0)
++
++    results = ps.evaluate_clustering(
++        adata, true_label_col="perturbations", cluster_col="k-means", metrics=["nmi", "ari"]
++    )
++    np.testing.assert_allclose(results["nmi"], 1.0, rtol=0.1)
++    np.testing.assert_allclose(results["ari"], 1.0, rtol=0.1)
++
++
++def test_hdbscan(rng):
++    adata = _blobs(rng)
++    ps = pt.tl.HDBSCANSpace()
++    adata = ps.compute(adata, min_cluster_size=3, copy=True)
++
++    assert "hdbscan" in adata.obs
++    results = ps.evaluate_clustering(
++        adata, true_label_col="perturbations", cluster_col="hdbscan", metrics=["nmi", "ari"]
++    )
++    np.testing.assert_allclose(results["nmi"], 1.0, rtol=0.1)
++    np.testing.assert_allclose(results["ari"], 1.0, rtol=0.1)

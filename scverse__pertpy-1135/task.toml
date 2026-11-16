@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1135"
+description = "Add numba kernels for MMD, mean_var_distribution and nb_ll and bucket Wasserstein shapes"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "a1c071a8967cd8815ea8716552f80e56c430b6c4"
+reference = "https://github.com/scverse/pertpy/pull/1135"
+source_access = "auto"
+built_at = "2026-11-15T16:39:17.451204+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:795e4caea17746be17bfdd4fbe0b769924f665c8c2d8fad006dfb50006dc16ee"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-10-01T15:51:58Z"
+diff_format = "unified"
+context_files = [
+    "src/pertpy/tools/_distances/_distance_tests.py",
+    "src/pertpy/tools/_distances/_distances.py",
+    "tests/tools/_distances/test_distances.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 387
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

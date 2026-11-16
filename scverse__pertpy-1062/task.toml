@@ -1,0 +1,64 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1062"
+description = "Rename DistanceTest alpha to padj_threshold"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "71b576168764200ec73e807a5ec43f6401bef35b"
+reference = "https://github.com/scverse/pertpy/pull/1062"
+source_access = "auto"
+built_at = "2026-11-15T16:41:36.042795+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:4800b08e975f86cd431a5b3d9129f8ada3ca88491b437e828d26d61afbe66e72"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-08-04T15:20:33Z"
+diff_format = "unified"
+context_files = [
+    "docs/tutorials/notebooks",
+    "src/pertpy/tools/_distances/_distance_tests.py",
+    "tests/tools/_distances/test_distance_tests.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 34
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

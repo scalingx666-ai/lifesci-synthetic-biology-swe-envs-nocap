@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/Adibvafa__CodonTransformer-13"
+description = "Add support for multiple sequence generation"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "CodonTransformer",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "Adibvafa/CodonTransformer"
+ref = "c646420ac764600134b0d6526b84e5832d8d9e60"
+reference = "https://github.com/Adibvafa/CodonTransformer/pull/13"
+source_access = "auto"
+built_at = "2026-11-15T18:01:29.409717+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:135e8d6f6cf6c1f13ee01e276c2f7b9c70227d464fab6b05a55880dd4fc9b917"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2024-09-21T19:04:38Z"
+diff_format = "unified"
+context_files = [
+    "CodonTransformer/CodonPrediction.py",
+    "tests/test_CodonPrediction.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 163
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

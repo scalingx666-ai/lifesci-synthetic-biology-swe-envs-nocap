@@ -1,0 +1,45 @@
+diff --git a/pertpy/tools/_differential_gene_expression/_base.py b/pertpy/tools/_differential_gene_expression/_base.py
+index a2f4c2ce..61747968 100644
+--- a/pertpy/tools/_differential_gene_expression/_base.py
++++ b/pertpy/tools/_differential_gene_expression/_base.py
+@@ -972,6 +972,13 @@ def test_contrasts(self, contrasts: np.ndarray | Mapping[str | None, np.ndarray]
+             contrasts = {None: contrasts}
+         results = []
+         for name, contrast in contrasts.items():
++            if np.allclose(np.asarray(contrast, dtype=float), 0):
++                raise ValueError(
++                    f"Contrast {name!r} is all zeros, which yields a meaningless test. "
++                    "This typically happens when the contrast lies in the null space of the design matrix — "
++                    "for example, requesting an interaction contrast from a model fit without the interaction term. "
++                    "Refit the model with a design that spans the contrast (e.g. add `factor_a * factor_b`)."
++                )
+             results.append(self._test_single_contrast(contrast, **kwargs).assign(contrast=name))
+ 
+         results_df = pd.concat(results)
+diff --git a/tests/tools/_differential_gene_expression/test_base.py b/tests/tools/_differential_gene_expression/test_base.py
+index 50bc0b5f..4358fee0 100644
+--- a/tests/tools/_differential_gene_expression/test_base.py
++++ b/tests/tools/_differential_gene_expression/test_base.py
+@@ -1,6 +1,7 @@
+ from collections.abc import Sequence
+ from importlib.util import find_spec
+ 
++import numpy as np
+ import pandas as pd
+ import pytest
+ from pandas.core.api import DataFrame
+@@ -92,6 +93,14 @@ def test_model_cond(test_adata_minimal, MockLinearModel, formula, cond_kwargs, e
+         assert actual_contrast.index.tolist() == mod.design.columns.tolist()
+ 
+ 
++def test_test_contrasts_rejects_zero_contrast(MockLinearModel, test_adata_minimal):
++    mod = MockLinearModel(test_adata_minimal, "~ condition")
++    with pytest.raises(ValueError, match="null space of the design matrix"):
++        mod.test_contrasts(np.zeros(2))
++    with pytest.raises(ValueError, match="'interaction'"):
++        mod.test_contrasts({"interaction": np.zeros(2)})
++
++
+ def test_plot_multicomparison_fc_many_genes(MockLinearModel, test_adata_minimal):
+     """Test that plot_multicomparison_fc works even when heatmap hides tick labels.
+ 

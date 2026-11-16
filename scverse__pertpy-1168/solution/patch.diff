@@ -1,0 +1,12 @@
+diff --git a/.github/workflows/release_drafter.yml b/.github/workflows/release_drafter.yml
+index a642bf1b..d705af46 100644
+--- a/.github/workflows/release_drafter.yml
++++ b/.github/workflows/release_drafter.yml
+@@ -20,6 +20,6 @@ jobs:
+             contents: write
+             pull-requests: read
+         steps:
+-            - uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9 # v7.7.0
++            - uses: release-drafter/release-drafter@978bb0b30c5ee8cdd332ced253758157150d43f0 # v7.10.0
+               env:
+                   GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"

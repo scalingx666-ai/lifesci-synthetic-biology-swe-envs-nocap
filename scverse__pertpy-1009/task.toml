@@ -1,0 +1,62 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1009"
+description = "ci: bump codecov-action to v6 and fail CI on upload error"
+
+[metadata]
+difficulty = "easy"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "a0a81cc661e9afdf9a6e19df54156ee60214bba3"
+reference = "https://github.com/scverse/pertpy/pull/1009"
+source_access = "auto"
+built_at = "2026-11-15T16:42:45.403018+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:6e5dd68cfec30baf02e58b34a36f562263778904288ab4705d1a3470f55e7c1d"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-06-08T13:42:21Z"
+diff_format = "unified"
+context_files = [
+    ".github/workflows/test.yml",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 4
+difficulty = "trivial"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

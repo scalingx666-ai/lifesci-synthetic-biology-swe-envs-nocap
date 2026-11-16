@@ -1,0 +1,305 @@
+diff --git a/CITATION.cff b/CITATION.cff
+index 869a69eb..d8020070 100644
+--- a/CITATION.cff
++++ b/CITATION.cff
+@@ -9,7 +9,7 @@ abstract: >-
+ type: software
+ license: Apache-2.0
+ repository-code: https://github.com/scverse/pertpy
+-url: https://pertpy.readthedocs.io
++url: https://pertpy.scverse.org/
+ keywords:
+   - single-cell
+   - perturbation
+diff --git a/README.md b/README.md
+index d7129aa0..55385a78 100644
+--- a/README.md
++++ b/README.md
+@@ -3,7 +3,7 @@
+ [![License](https://img.shields.io/github/license/scverse/pertpy)](https://opensource.org/licenses/Apache2.0)
+ [![PyPI](https://img.shields.io/pypi/v/pertpy.svg)](https://pypi.org/project/pertpy/)
+ [![Python Version](https://img.shields.io/pypi/pyversions/pertpy)](https://pypi.org/project/pertpy)
+-[![Read the Docs](https://img.shields.io/readthedocs/pertpy/latest.svg?label=Read%20the%20Docs)](https://pertpy.readthedocs.io/)
++[![Read the Docs](https://img.shields.io/readthedocs/pertpy/latest.svg?label=Read%20the%20Docs)](https://pertpy.scverse.org/)
+ [![Test](https://github.com/scverse/pertpy/actions/workflows/test.yml/badge.svg)](https://github.com/scverse/pertpy/actions/workflows/test.yml)
+ [![PyPI](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
+ 
+@@ -18,7 +18,7 @@ Please read our associated manuscript ["Pertpy: an end-to-end framework for pert
+ 
+ ## Documentation
+ 
+-Please read the [documentation](https://pertpy.readthedocs.io/en/latest) for installation instructions, tutorials, use cases, and more.
++Please read the [documentation](https://pertpy.scverse.org/) for installation instructions, tutorials, use cases, and more.
+ 
+ ## Installation
+ 
+@@ -99,7 +99,7 @@ pip install rpy2
+ 
+ [pip]: https://pip.pypa.io/
+ [pypi]: https://pypi.org/
+-[api]: https://pertpy.readthedocs.io/en/latest/api.html
++[api]: https://pertpy.scverse.org/page/api.html
+ [conda-forge]: https://anaconda.org/conda-forge/pertpy
+ [//]: # "numfocus-fiscal-sponsor-attribution"
+ 
+diff --git a/docs/api/preprocessing_index.md b/docs/api/preprocessing_index.md
+index 9d064a57..7782234f 100644
+--- a/docs/api/preprocessing_index.md
++++ b/docs/api/preprocessing_index.md
+@@ -39,4 +39,4 @@ ga.assign_by_threshold(gdo, 5, layer="counts", output_layer="assigned_guides")
+ ga.plot_heatmap(gdo, layer="assigned_guides")
+ ```
+ 
+-See [guide assignment tutorial](https://pertpy.readthedocs.io/en/latest/tutorials/notebooks/guide_rna_assignment.html).
++See {doc}`/tutorials/notebooks/guide_rna_assignment` tutorial.
+diff --git a/docs/api/tools_index.md b/docs/api/tools_index.md
+index aec4577c..8d956e2c 100644
+--- a/docs/api/tools_index.md
++++ b/docs/api/tools_index.md
+@@ -62,7 +62,7 @@ EdgeR
+     Fitted        yes
+ ```
+ 
+-See [differential gene expression tutorial](https://pertpy.readthedocs.io/en/latest/tutorials/notebooks/differential_gene_expression.html).
++See {doc}`/tutorials/notebooks/differential_gene_expression` tutorial.
+ 
+ ## Pooled CRISPR screens
+ 
+@@ -99,7 +99,7 @@ ms.lda(adata=mdata["rna"], labels="gene_target", layer="X_pert", control="NT")
+ ms.plot_lda(adata=mdata["rna"], control="NT")
+ ```
+ 
+-See [perturbation efficacy tutorial](https://pertpy.readthedocs.io/en/latest/tutorials/notebooks/perturbation_efficacy.html).
++See {doc}`/tutorials/notebooks/perturbation_efficacy` tutorial.
+ 
+ ### Perturbation scoring - Mixscale
+ 
+@@ -126,7 +126,7 @@ ms.perturbation_signature(mdata["rna"], "perturbation", "NT", split_by="replicat
+ ms.mixscale(mdata["rna"], "gene_target", "NT", layer="X_pert")
+ ```
+ 
+-See [perturbation efficacy tutorial](https://pertpy.readthedocs.io/en/latest/tutorials/notebooks/perturbation_efficacy.html).
++See {doc}`/tutorials/notebooks/perturbation_efficacy` tutorial.
+ 
+ ## Compositional analysis
+ 
+@@ -182,7 +182,7 @@ milo.group_nhoods(mdata)
+ milo.annotate_cells_from_nhoods(mdata)
+ ```
+ 
+-See [milo tutorial](https://pertpy.readthedocs.io/en/latest/tutorials/notebooks/milo.html).
++See {doc}`/tutorials/notebooks/milo` tutorial.
+ 
+ ### With labeled groups - scCODA and tascCODA
+ 
+@@ -232,7 +232,7 @@ sccoda.summary(sccoda_data, modality_key="coda_salm")
+ sccoda.plot_effects_barplot(sccoda_data, modality_key="coda_salm", parameter="Final Parameter")
+ ```
+ 
+-See [sccoda tutorial](https://pertpy.readthedocs.io/en/latest/tutorials/notebooks/sccoda.html), [extended sccoda tutorial](https://pertpy.readthedocs.io/en/latest/tutorials/notebooks/sccoda_extended.html) and [tasccoda tutorial](https://pertpy.readthedocs.io/en/latest/tutorials/notebooks/tasccoda.html).
++See {doc}`/tutorials/notebooks/sccoda`, {doc}`/tutorials/notebooks/sccoda_extended`, and {doc}`/tutorials/notebooks/tasccoda` tutorials.
+ 
+ ## Multicellular and gene programs
+ 
+@@ -285,7 +285,7 @@ dl.get_program_genes(adata, program="MCP1", celltype="CD8+ IELs")
+ dl.test_phenotype_association(adata, condition_key="path_str")
+ ```
+ 
+-See [DIALOGUE tutorial](https://pertpy.readthedocs.io/en/latest/tutorials/notebooks/dialogue.html).
++See {doc}`/tutorials/notebooks/dialogue` tutorial.
+ 
+ ### Enrichment
+ 
+@@ -361,7 +361,7 @@ A high reversal score is a hypothesis for follow-up, not evidence of therapeutic
+ In particular, a perturbation can score highly by suppressing a compensatory or protective stress response.
+ Results should therefore be interpreted together with biological context and orthogonal phenotypic, viability, and toxicity measurements.
+ 
+-See [enrichment tutorial](https://pertpy.readthedocs.io/en/latest/tutorials/notebooks/enrichment.html).
++See {doc}`/tutorials/notebooks/enrichment` tutorial.
+ 
+ ## Distances and permutation tests
+ 
+@@ -399,8 +399,7 @@ etest = pt.tl.DistanceTest("edistance", n_perms=1000, obsm_key="X_pca")
+ tab = etest(adata, groupby="perturbation", contrast="control")
+ ```
+ 
+-See [distance tutorial](https://pertpy.readthedocs.io/en/latest/tutorials/notebooks/distances.html)
+-and [distance tests tutorial](https://pertpy.readthedocs.io/en/latest/tutorials/notebooks/distance_tests.html).
++See {doc}`/tutorials/notebooks/distances` and {doc}`/tutorials/notebooks/distance_tests` tutorials.
+ 
+ ## Response prediction
+ 
+@@ -431,7 +430,7 @@ adata, results = ag.predict(adata)
+ results["summary_metrics"]
+ ```
+ 
+-See [augur tutorial](https://pertpy.readthedocs.io/en/latest/tutorials/notebooks/augur.html).
++See {doc}`/tutorials/notebooks/augur` tutorial.
+ 
+ ```{eval-rst}
+ .. autosummary::
+@@ -472,7 +471,7 @@ pred, delta = scgen.predict(ctrl_key="control", stim_key="stimulated", celltype_
+ pred.obs["condition"] = "pred"
+ ```
+ 
+-See [scgen tutorial](https://pertpy.readthedocs.io/en/latest/tutorials/notebooks/scgen_perturbation_prediction.html).
++See {doc}`/tutorials/notebooks/scgen_perturbation_prediction` tutorial.
+ 
+ ### Causal perturbation analysis with CINEMA-OT
+ 
+@@ -510,7 +509,7 @@ de = model.causaleffect(
+ )
+ ```
+ 
+-See [CINEMA-OT tutorial](https://pertpy.readthedocs.io/en/latest/tutorials/notebooks/cinemaot.html).
++See {doc}`/tutorials/notebooks/cinemaot` tutorial.
+ 
+ ## Perturbation space
+ 
+@@ -552,7 +551,7 @@ ds_adata = ds.compute(mdata["rna"], target_col="gene_target", metric="edistance"
+ similar = ds.nearest_perturbations(ds_adata, "IFNGR2", target_col="gene_target")
+ ```
+ 
+-See [perturbation space tutorial](https://pertpy.readthedocs.io/en/latest/tutorials/notebooks/perturbation_space.html).
++See {doc}`/tutorials/notebooks/perturbation_space` tutorial.
+ 
+ ### Dose-response curve fitting
+ 
+diff --git a/docs/conf.py b/docs/conf.py
+index 41791a84..b2656a13 100644
+--- a/docs/conf.py
++++ b/docs/conf.py
+@@ -118,7 +118,7 @@
+ add_module_names = False
+ autodoc_mock_imports = ["ete4"]
+ intersphinx_mapping = {
+-    "anndata": ("https://anndata.readthedocs.io/en/stable/", None),
++    "anndata": ("https://anndata.scverse.org/en/stable/", None),
+     "decoupler": ("https://decoupler.readthedocs.io/en/latest/", None),
+     "mudata": ("https://mudata.readthedocs.io/stable/", None),
+     "matplotlib": ("https://matplotlib.org/stable/", None),
+@@ -126,7 +126,7 @@
+     "pandas": ("https://pandas.pydata.org/docs/", None),
+     "python": ("https://docs.python.org/3", None),
+     "scipy": ("https://docs.scipy.org/doc/scipy/", None),
+-    "scanpy": ("https://scanpy.readthedocs.io/en/stable/", None),
++    "scanpy": ("https://scanpy.scverse.org/en/stable/", None),
+     "seaborn": ("https://seaborn.pydata.org/", None),
+     "pyro": ("https://docs.pyro.ai/en/stable/", None),
+     "pymde": ("https://pymde.org/", None),
+diff --git a/docs/contributing.md b/docs/contributing.md
+index f4a0cb00..4fea9dbb 100644
+--- a/docs/contributing.md
++++ b/docs/contributing.md
+@@ -5,11 +5,10 @@ We assume that you are already familiar with git and with making pull requests o
+ 
+ For more extensive tutorials, that also cover the absolute basics,
+ please refer to other resources such as the [pyopensci tutorials][],
+-the [scientific Python tutorials][], or the [scanpy developer guide][].
++the [scientific Python tutorials][], or the {doc}`scanpy developer guide <scanpy:dev/index>`.
+ 
+ [pyopensci tutorials]: https://www.pyopensci.org/learn.html
+ [scientific Python tutorials]: https://learn.scientific-python.org/development/tutorials/
+-[scanpy developer guide]: https://scanpy.readthedocs.io/en/latest/dev/index.html
+ 
+ :::{tip} The *hatch* project manager
+ 
+diff --git a/docs/llms.txt b/docs/llms.txt
+index c4a3e694..46129be3 100644
+--- a/docs/llms.txt
++++ b/docs/llms.txt
+@@ -11,47 +11,47 @@ Every page listed below is also available as Markdown by requesting it with the
+ 
+ ## Start here
+ 
+-- [Installation](https://pertpy.readthedocs.io/en/stable/installation.html): pip and conda-forge installation, including the `jax`, `de`, `tcoda` and `scgen` extras that individual tools require.
+-- [API reference](https://pertpy.readthedocs.io/en/stable/api.html): entry point to all four modules.
+-- [Tutorials](https://pertpy.readthedocs.io/en/stable/tutorials.html): executable notebooks for every tool.
+-- [Use cases](https://pertpy.readthedocs.io/en/stable/usecases.html): end-to-end reanalyses of published perturbation studies.
++- [Installation](https://pertpy.scverse.org/page/installation.html): pip and conda-forge installation, including the `jax`, `de`, `tcoda` and `scgen` extras that individual tools require.
++- [API reference](https://pertpy.scverse.org/page/api.html): entry point to all four modules.
++- [Tutorials](https://pertpy.scverse.org/page/tutorials.html): executable notebooks for every tool.
++- [Use cases](https://pertpy.scverse.org/page/usecases.html): end-to-end reanalyses of published perturbation studies.
+ 
+ ## Tools by task
+ 
+-- [Differential gene expression](https://pertpy.readthedocs.io/en/stable/api/tools_index.html#differential-gene-expression): `pt.tl.PyDESeq2`, `pt.tl.EdgeR`, `pt.tl.WilcoxonTest`, `pt.tl.TTest`, `pt.tl.PermutationTest` and `pt.tl.Statsmodels` behind one interface that supports complex designs and contrasts.
+-- [Perturbation assignment and efficacy](https://pertpy.readthedocs.io/en/stable/api/tools_index.html#pooled-crispr-screens): `pt.tl.Mixscape` for binary perturbed/non-perturbed calls and `pt.tl.Mixscale` for continuous perturbation scores in pooled CRISPR screens.
+-- [Differential abundance without labeled groups](https://pertpy.readthedocs.io/en/stable/api/tools_index.html#compositional-analysis): `pt.tl.Milo` tests differential abundance on k-nearest-neighbor graph neighborhoods.
+-- [Compositional analysis with labeled groups](https://pertpy.readthedocs.io/en/stable/api/tools_index.html#compositional-analysis): `pt.tl.Sccoda` and `pt.tl.Tasccoda` model cell type composition with Bayesian hierarchical models.
+-- [Multicellular programs](https://pertpy.readthedocs.io/en/stable/api/tools_index.html#multicellular-programs-dialogue): `pt.tl.Dialogue` identifies latent programs coordinated across cell types.
+-- [Enrichment](https://pertpy.readthedocs.io/en/stable/api/tools_index.html#enrichment): `pt.tl.Enrichment` scores pathway and drug target gene sets, including drug2cell.
+-- [Perturbation distances and permutation tests](https://pertpy.readthedocs.io/en/stable/api/tools_index.html#distances-and-permutation-tests): `pt.tl.Distance` computes metrics such as edistance, MMD and Wasserstein between perturbation groups, `pt.tl.DistanceTest` turns them into permutation tests.
+-- [Perturbation spaces](https://pertpy.readthedocs.io/en/stable/api/tools_index.html#perturbation-space): `pt.tl.PseudobulkSpace`, `pt.tl.CentroidSpace`, `pt.tl.DistanceSpace`, `pt.tl.EmbeddingSpace` and the classifier and clustering spaces summarize all cells of a perturbation into one observation.
+-- [Cell type prioritization](https://pertpy.readthedocs.io/en/stable/api/tools_index.html#rank-perturbations-augur): `pt.tl.Augur` ranks cell types by how strongly they respond to a perturbation.
+-- [Response prediction](https://pertpy.readthedocs.io/en/stable/api/tools_index.html#gene-expression-prediction-with-scgen): `pt.tl.Scgen` predicts cell-type-specific responses to a perturbation.
+-- [Causal effect analysis](https://pertpy.readthedocs.io/en/stable/api/tools_index.html#causal-perturbation-analysis-with-cinema-ot): `pt.tl.Cinemaot` separates confounding variation from perturbation effects to obtain counterfactual cell pairs.
++- [Differential gene expression](https://pertpy.scverse.org/page/api/tools_index.html#differential-gene-expression): `pt.tl.PyDESeq2`, `pt.tl.EdgeR`, `pt.tl.WilcoxonTest`, `pt.tl.TTest`, `pt.tl.PermutationTest` and `pt.tl.Statsmodels` behind one interface that supports complex designs and contrasts.
++- [Perturbation assignment and efficacy](https://pertpy.scverse.org/page/api/tools_index.html#pooled-crispr-screens): `pt.tl.Mixscape` for binary perturbed/non-perturbed calls and `pt.tl.Mixscale` for continuous perturbation scores in pooled CRISPR screens.
++- [Differential abundance without labeled groups](https://pertpy.scverse.org/page/api/tools_index.html#compositional-analysis): `pt.tl.Milo` tests differential abundance on k-nearest-neighbor graph neighborhoods.
++- [Compositional analysis with labeled groups](https://pertpy.scverse.org/page/api/tools_index.html#compositional-analysis): `pt.tl.Sccoda` and `pt.tl.Tasccoda` model cell type composition with Bayesian hierarchical models.
++- [Multicellular programs](https://pertpy.scverse.org/page/api/tools_index.html#multicellular-programs-dialogue): `pt.tl.Dialogue` identifies latent programs coordinated across cell types.
++- [Enrichment](https://pertpy.scverse.org/page/api/tools_index.html#enrichment): `pt.tl.Enrichment` scores pathway and drug target gene sets, including drug2cell.
++- [Perturbation distances and permutation tests](https://pertpy.scverse.org/page/api/tools_index.html#distances-and-permutation-tests): `pt.tl.Distance` computes metrics such as edistance, MMD and Wasserstein between perturbation groups, `pt.tl.DistanceTest` turns them into permutation tests.
++- [Perturbation spaces](https://pertpy.scverse.org/page/api/tools_index.html#perturbation-space): `pt.tl.PseudobulkSpace`, `pt.tl.CentroidSpace`, `pt.tl.DistanceSpace`, `pt.tl.EmbeddingSpace` and the classifier and clustering spaces summarize all cells of a perturbation into one observation.
++- [Cell type prioritization](https://pertpy.scverse.org/page/api/tools_index.html#rank-perturbations-augur): `pt.tl.Augur` ranks cell types by how strongly they respond to a perturbation.
++- [Response prediction](https://pertpy.scverse.org/page/api/tools_index.html#gene-expression-prediction-with-scgen): `pt.tl.Scgen` predicts cell-type-specific responses to a perturbation.
++- [Causal effect analysis](https://pertpy.scverse.org/page/api/tools_index.html#causal-perturbation-analysis-with-cinema-ot): `pt.tl.Cinemaot` separates confounding variation from perturbation effects to obtain counterfactual cell pairs.
+ 
+ ## Data and metadata
+ 
+-- [Datasets](https://pertpy.readthedocs.io/en/stable/api/datasets_index.html): `pt.dt` downloads harmonized perturbation datasets such as `norman_2019`, `papalexi_2021`, `replogle_2022_k562_essential` and `srivatsan_2020_sciplex3`.
+-- [Preprocessing](https://pertpy.readthedocs.io/en/stable/api/preprocessing_index.html): guide RNA assignment for pooled CRISPR screens.
+-- [Metadata annotation](https://pertpy.readthedocs.io/en/stable/api/metadata_index.html): `pt.md.CellLine`, `pt.md.Compound`, `pt.md.Drug` and `pt.md.Moa` annotate cell lines, compounds and mechanisms of action from public databases.
++- [Datasets](https://pertpy.scverse.org/page/api/datasets_index.html): `pt.dt` downloads harmonized perturbation datasets such as `norman_2019`, `papalexi_2021`, `replogle_2022_k562_essential` and `srivatsan_2020_sciplex3`.
++- [Preprocessing](https://pertpy.scverse.org/page/api/preprocessing_index.html): guide RNA assignment for pooled CRISPR screens.
++- [Metadata annotation](https://pertpy.scverse.org/page/api/metadata_index.html): `pt.md.CellLine`, `pt.md.Compound`, `pt.md.Drug` and `pt.md.Moa` annotate cell lines, compounds and mechanisms of action from public databases.
+ 
+ ## Tutorials
+ 
+-- [Guide RNA assignment](https://pertpy.readthedocs.io/en/stable/tutorials/notebooks/guide_rna_assignment.html)
+-- [Perturbation efficacy with Mixscape and Mixscale](https://pertpy.readthedocs.io/en/stable/tutorials/notebooks/perturbation_efficacy.html)
+-- [Differential gene expression](https://pertpy.readthedocs.io/en/stable/tutorials/notebooks/differential_gene_expression.html)
+-- [Differential abundance with Milo](https://pertpy.readthedocs.io/en/stable/tutorials/notebooks/milo.html)
+-- [Compositional analysis with scCODA](https://pertpy.readthedocs.io/en/stable/tutorials/notebooks/sccoda.html)
+-- [Perturbation distances](https://pertpy.readthedocs.io/en/stable/tutorials/notebooks/distances.html)
+-- [Perturbation spaces](https://pertpy.readthedocs.io/en/stable/tutorials/notebooks/perturbation_space.html)
+-- [Cell type prioritization with Augur](https://pertpy.readthedocs.io/en/stable/tutorials/notebooks/augur.html)
+-- [Metadata annotation](https://pertpy.readthedocs.io/en/stable/tutorials/notebooks/metadata_annotation.html)
++- [Guide RNA assignment](https://pertpy.scverse.org/page/tutorials/notebooks/guide_rna_assignment.html)
++- [Perturbation efficacy with Mixscape and Mixscale](https://pertpy.scverse.org/page/tutorials/notebooks/perturbation_efficacy.html)
++- [Differential gene expression](https://pertpy.scverse.org/page/tutorials/notebooks/differential_gene_expression.html)
++- [Differential abundance with Milo](https://pertpy.scverse.org/page/tutorials/notebooks/milo.html)
++- [Compositional analysis with scCODA](https://pertpy.scverse.org/page/tutorials/notebooks/sccoda.html)
++- [Perturbation distances](https://pertpy.scverse.org/page/tutorials/notebooks/distances.html)
++- [Perturbation spaces](https://pertpy.scverse.org/page/tutorials/notebooks/perturbation_space.html)
++- [Cell type prioritization with Augur](https://pertpy.scverse.org/page/tutorials/notebooks/augur.html)
++- [Metadata annotation](https://pertpy.scverse.org/page/tutorials/notebooks/metadata_annotation.html)
+ 
+ ## Project
+ 
+ - [Source code](https://github.com/scverse/pertpy)
+ - [Publication](https://doi.org/10.1038/s41592-025-02909-7): Heumos et al., Pertpy: an end-to-end framework for perturbation analysis, Nature Methods 2025.
+-- [Changelog](https://pertpy.readthedocs.io/en/stable/changelog.html)
+-- [Contributing](https://pertpy.readthedocs.io/en/stable/contributing.html)
++- [Changelog](https://pertpy.scverse.org/page/changelog.html)
++- [Contributing](https://pertpy.scverse.org/page/contributing.html)
+ - [Forum](https://discourse.scverse.org/c/ecosystem/pertpy/46)
+diff --git a/pyproject.toml b/pyproject.toml
+index 67059d9a..e80580a6 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -25,11 +25,11 @@ authors = [
+ maintainers = [
+     {name = "Lukas Heumos", email = "lukas.heumos@posteo.net"},
+ ]
+-urls.Documentation = "https://pertpy.readthedocs.io"
++urls.Documentation = "https://pertpy.scverse.org/"
+ urls.Source = "https://github.com/scverse/pertpy"
+ urls.Home-page = "https://github.com/scverse/pertpy"
+ urls.Issues = "https://github.com/scverse/pertpy/issues"
+-urls.Changelog = "https://pertpy.readthedocs.io/en/stable/changelog.html"
++urls.Changelog = "https://pertpy.scverse.org/page/changelog.html"
+ urls.Forum = "https://discourse.scverse.org/c/ecosystem/pertpy/46"
+ urls.Publication = "https://doi.org/10.1038/s41592-025-02909-7"
+ 

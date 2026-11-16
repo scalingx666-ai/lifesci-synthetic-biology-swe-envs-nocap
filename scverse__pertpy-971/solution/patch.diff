@@ -1,0 +1,50 @@
+diff --git a/pertpy/tools/_coda/_base_coda.py b/pertpy/tools/_coda/_base_coda.py
+index 0f55ad8e..1152115f 100644
+--- a/pertpy/tools/_coda/_base_coda.py
++++ b/pertpy/tools/_coda/_base_coda.py
+@@ -2208,7 +2208,9 @@ def plot_effects_umap(  # pragma: no cover # noqa: D417
+                 cluster: palette(i % palette.N) for i, cluster in enumerate(data_rna.obs[cluster_key].unique().tolist())
+             }
+         for _, effect in enumerate(effect_name):
+-            data_rna.obs[effect] = [data_coda.varm[effect].loc[f"{c}", "Effect"] for c in data_rna.obs[cluster_key]]
++            effect_df = data_coda.varm[effect]
++            effect_col = "Effect" if "Effect" in effect_df.columns else "Final Parameter"
++            data_rna.obs[effect] = [effect_df.loc[f"{c}", effect_col] for c in data_rna.obs[cluster_key]]
+         if kwargs.get("vmin"):
+             vmin = kwargs["vmin"]
+             kwargs.pop("vmin")
+diff --git a/tests/tools/_coda/test_sccoda.py b/tests/tools/_coda/test_sccoda.py
+index 479f231d..896b8652 100644
+--- a/tests/tools/_coda/test_sccoda.py
++++ b/tests/tools/_coda/test_sccoda.py
+@@ -105,3 +105,30 @@ def test_make_arviz(adata):
+     sccoda.run_nuts(mdata)
+     arviz_data = sccoda.make_arviz(mdata, num_prior_samples=100)
+     assert isinstance(arviz_data, DataTree)
++
++
++def test_plot_effects_umap_sccoda(adata):
++    # Regression test for #780: Sccoda writes effect column as "Final Parameter",
++    # not "Effect" like Tasccoda, so plot_effects_umap must look up either name.
++    adata_salm = adata[adata.obs["condition"].isin(["Control", "Salmonella"])]
++    mdata = sccoda.load(
++        adata_salm,
++        type="cell_level",
++        generate_sample_level=True,
++        cell_type_identifier="cell_label",
++        sample_identifier="batch",
++        covariate_obs=["condition"],
++    )
++    mdata = sccoda.prepare(mdata, formula="condition", reference_cell_type="Goblet")
++    sccoda.run_nuts(mdata, num_samples=200, num_warmup=50)
++    sc.pp.pca(mdata["rna"])
++    sc.pp.neighbors(mdata["rna"])
++    sc.tl.umap(mdata["rna"])
++    effect = "effect_df_condition[T.Salmonella]"
++    sccoda.plot_effects_umap(
++        mdata,
++        modality_key_2="coda",
++        effect_name=effect,
++        cluster_key="cell_label",
++    )
++    assert effect in mdata["rna"].obs.columns

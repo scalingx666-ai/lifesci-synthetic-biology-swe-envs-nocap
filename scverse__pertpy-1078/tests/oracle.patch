@@ -1,0 +1,62 @@
+diff --git a/src/pertpy/tools/_milo.py b/src/pertpy/tools/_milo.py
+index 9be9a74f..95420bf3 100644
+--- a/src/pertpy/tools/_milo.py
++++ b/src/pertpy/tools/_milo.py
+@@ -1589,14 +1589,18 @@ def plot_da_beeswarm(  # pragma: no cover # noqa: D417
+                 "Unable to find 'logFC' in mdata.uns['nhood_adata'].obs. Run 'core.da_nhoods(adata)' first."
+             ) from None
+ 
+-        sorted_annos = (
+-            nhood_adata.obs[[anno_col, "logFC"]].groupby(anno_col).median().sort_values("logFC", ascending=True).index
+-        )
+-
+         anno_df = nhood_adata.obs[[anno_col, "logFC", "SpatialFDR"]].copy()
+         anno_df["is_signif"] = anno_df["SpatialFDR"] < padj_threshold
+         anno_df = anno_df[anno_df[anno_col] != "nan"]
+ 
++        sorted_annos = (
++            anno_df[[anno_col, "logFC"]]
++            .groupby(anno_col, observed=True)
++            .median()
++            .sort_values("logFC", ascending=True)
++            .index
++        )
++
+         try:
+             obs_col = nhood_adata.uns["annotation_obs"]
+             if palette is None:
+diff --git a/tests/tools/test_milo.py b/tests/tools/test_milo.py
+index 38582d40..ddc062f0 100644
+--- a/tests/tools/test_milo.py
++++ b/tests/tools/test_milo.py
+@@ -433,6 +433,30 @@ def test_plot_de_nhood_graph(de_nhoods_mdata, milo):
+         milo.plot_de_nhood_graph(mdata, de, gene="not_a_real_gene")
+ 
+ 
++def test_plot_da_beeswarm_skips_unused_categories(da_nhoods_mdata, milo, solver):
++    """Cell types without a neighbourhood must not be drawn as empty rows."""
++    import matplotlib
++    import matplotlib.pyplot as plt
++
++    matplotlib.use("Agg")
++    plt.close("all")
++    mdata = da_nhoods_mdata.copy()
++    cell_type = mdata["rna"].obs["louvain"].astype(str).astype("category")
++    mdata["rna"].obs["cell_type"] = cell_type.cat.add_categories(["Unobserved"])
++    milo.da_nhoods(mdata, design="~condition", solver=solver)
++    milo.annotate_nhoods(mdata, anno_col="cell_type")
++
++    annotation = mdata["milo"].var["nhood_annotation"]
++    mdata["milo"].var["nhood_annotation"] = annotation.cat.add_categories(["nan"]).where(
++        np.arange(len(annotation)) > 0, "nan"
++    )
++
++    fig = milo.plot_da_beeswarm(mdata, return_fig=True)
++    labels = [label.get_text() for label in fig.axes[0].get_yticklabels()]
++
++    assert set(labels) == set(mdata["milo"].var["nhood_annotation"].astype(str)) - {"nan"}
++
++
+ def test_de_nhoods_statsmodels_runs(de_nhoods_mdata, milo):
+     mdata = de_nhoods_mdata.copy()
+     de = milo.de_nhoods(

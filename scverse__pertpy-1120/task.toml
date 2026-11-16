@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1120"
+description = "Compute evaluate_clustering's ASW on the precomputed cell distances"
+
+[metadata]
+difficulty = "small"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "bdd6ebbc40a836205f5d64ddb08f1c6a1bf3d411"
+reference = "https://github.com/scverse/pertpy/pull/1120"
+source_access = "auto"
+built_at = "2026-11-15T16:39:54.660777+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:25ad584a1d013635bdd8f509dcef2794ecb6383bb254a8d509cb1fdd25ac5cf5"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-10-01T12:00:58Z"
+diff_format = "unified"
+context_files = [
+    "src/pertpy/tools/_perturbation_space/_clustering.py",
+    "tests/tools/_perturbation_space/test_simple_cluster_space.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 13
+difficulty = "small"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

@@ -1,0 +1,66 @@
+version = "1.0"
+
+[task]
+name = "default/Adibvafa__CodonTransformer-11"
+description = "Add support for top_p in non-deterministic generation"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "CodonTransformer",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "Adibvafa/CodonTransformer"
+ref = "ca24214b3b5c885046f0d93939f8ecc78935af69"
+reference = "https://github.com/Adibvafa/CodonTransformer/pull/11"
+source_access = "auto"
+built_at = "2026-11-15T18:01:30.623226+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:636abc63a72a2d62a602dc387f5c5d055f09a95619b132b3f6ea06c3be4adbae"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2024-09-21T00:42:28Z"
+diff_format = "unified"
+context_files = [
+    "CodonTransformer/CodonData.py",
+    "CodonTransformer/CodonPrediction.py",
+    "CodonTransformer/CodonUtils.py",
+    "README.md",
+    "tests/test_CodonPrediction.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 445
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

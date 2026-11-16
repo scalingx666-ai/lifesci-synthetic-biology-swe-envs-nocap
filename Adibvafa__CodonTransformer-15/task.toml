@@ -1,0 +1,67 @@
+version = "1.0"
+
+[task]
+name = "default/Adibvafa__CodonTransformer-15"
+description = "Add support for protein sequence matching"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "CodonTransformer",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "Adibvafa/CodonTransformer"
+ref = "1356ebb372358b15d7e85009c1a6a197e986aa5e"
+reference = "https://github.com/Adibvafa/CodonTransformer/pull/15"
+source_access = "auto"
+built_at = "2026-11-15T18:01:28.082698+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:b4b486bb3a0a5328689fe0328481f6a95392931171333e7bb52877cfed588302"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2024-10-29T23:02:30Z"
+diff_format = "unified"
+context_files = [
+    "CodonTransformer/CodonData.py",
+    "CodonTransformer/CodonPrediction.py",
+    "CodonTransformer/CodonUtils.py",
+    "tests/test_CodonData.py",
+    "tests/test_CodonPrediction.py",
+    "tests/test_CodonUtils.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 234
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

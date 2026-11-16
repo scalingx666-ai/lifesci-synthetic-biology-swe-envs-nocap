@@ -1,0 +1,63 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1077"
+description = "Raise a clear error when a da_nhoods design has no residual degrees of freedom"
+
+[metadata]
+difficulty = "medium"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "557813ceb0f7886374c3f894e80087d35f357a8e"
+reference = "https://github.com/scverse/pertpy/pull/1077"
+source_access = "auto"
+built_at = "2026-11-15T16:41:08.634772+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:1a9e98d9eab93134993fd9d2970cffa6026a5b13d524c3ad1a7d04f9fe391b06"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-08-23T17:03:55Z"
+diff_format = "unified"
+context_files = [
+    "src/pertpy/tools/_milo.py",
+    "tests/tools/test_milo.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 41
+difficulty = "medium"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

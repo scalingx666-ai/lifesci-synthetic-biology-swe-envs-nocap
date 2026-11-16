@@ -1,0 +1,123 @@
+diff --git a/docs/tutorials/notebooks b/docs/tutorials/notebooks
+index 817d28bb..01a67045 160000
+--- a/docs/tutorials/notebooks
++++ b/docs/tutorials/notebooks
+@@ -1 +1 @@
+-Subproject commit 817d28bb109eccb0ae7a549428bc961347f06c2a
++Subproject commit 01a67045a431fff5cae281334337126e260afc7c
+diff --git a/src/pertpy/tools/_distances/_distance_tests.py b/src/pertpy/tools/_distances/_distance_tests.py
+index d3c94648..89183f07 100644
+--- a/src/pertpy/tools/_distances/_distance_tests.py
++++ b/src/pertpy/tools/_distances/_distance_tests.py
+@@ -1,10 +1,11 @@
+ from __future__ import annotations
+ 
+-from typing import TYPE_CHECKING
++from typing import TYPE_CHECKING, cast
+ 
+ import numpy as np
+ import pandas as pd
+ from rich.progress import track
++from scverse_misc import Deprecation, deprecated_arg
+ from sklearn.metrics import pairwise_distances
+ from statsmodels.stats.multitest import multipletests
+ 
+@@ -32,9 +33,10 @@ class DistanceTest:
+         obsm_key: Name of embedding in adata.obsm to use.
+                   Mutually exclusive with 'counts_layer_key'.
+                   Defaults to None, but is set to "X_pca" if not set explicitly internally.
+-        alpha: Significance level.
++        padj_threshold: Significance level, applied to the raw p-values and to the p-values after multiple testing correction.
+         correction: Multiple testing correction method.
+         cell_wise_metric: Metric to use between single cells.
++        alpha: Deprecated and will be removed in a future release. Use `padj_threshold`.
+ 
+     Examples:
+         >>> import pertpy as pt
+@@ -43,6 +45,10 @@ class DistanceTest:
+         >>> tab = distance_test(adata, groupby="perturbation", contrast="control")
+     """
+ 
++    @deprecated_arg(  # type: ignore[misc]
++        "alpha",
++        cast("Deprecation", Deprecation("1.1.2", "Use `padj_threshold`.")),
++    )
+     def __init__(
+         self,
+         metric: Metric,
+@@ -50,10 +56,14 @@ def __init__(
+         n_perms: int = 1000,
+         layer_key: str | None = None,
+         obsm_key: str | None = None,
+-        alpha: float = 0.05,
++        padj_threshold: float = 0.05,
+         correction: str = "holm-sidak",
+         cell_wise_metric=None,
++        alpha: float | None = None,
+     ):
++        if alpha is not None:
++            padj_threshold = alpha
++
+         self.metric = metric
+         self.n_perms = n_perms
+ 
+@@ -66,7 +76,7 @@ def __init__(
+             obsm_key = "X_pca"
+         self.layer_key = layer_key
+         self.obsm_key = obsm_key
+-        self.alpha = alpha
++        self.padj_threshold = padj_threshold
+         self.correction = correction
+         self.cell_wise_metric = (
+             cell_wise_metric if cell_wise_metric else Distance(self.metric, obsm_key=self.obsm_key).cell_wise_metric
+@@ -190,14 +200,16 @@ def test_xy(self, adata: AnnData, groupby: str, contrast: str, show_progressbar:
+         pvalues = n_failures / self.n_perms
+ 
+         # Apply multiple testing correction
+-        significant_adj, pvalue_adj, _, _ = multipletests(pvalues.values, alpha=self.alpha, method=self.correction)
++        significant_adj, pvalue_adj, _, _ = multipletests(
++            pvalues.values, alpha=self.padj_threshold, method=self.correction
++        )
+ 
+         # Aggregate results
+         tab = pd.DataFrame(
+             {
+                 "distance": df["distance"],
+                 "pvalue": pvalues,
+-                "significant": pvalues < self.alpha,
++                "significant": pvalues < self.padj_threshold,
+                 "pvalue_adj": pvalue_adj,
+                 "significant_adj": significant_adj,
+             },
+@@ -302,14 +314,16 @@ def test_precomputed(self, adata: AnnData, groupby: str, contrast: str, verbose:
+         pvalues = n_failures / self.n_perms
+ 
+         # Apply multiple testing correction
+-        significant_adj, pvalue_adj, _, _ = multipletests(pvalues.values, alpha=self.alpha, method=self.correction)
++        significant_adj, pvalue_adj, _, _ = multipletests(
++            pvalues.values, alpha=self.padj_threshold, method=self.correction
++        )
+ 
+         # Aggregate results
+         tab = pd.DataFrame(
+             {
+                 "distance": df["distance"],
+                 "pvalue": pvalues,
+-                "significant": pvalues < self.alpha,
++                "significant": pvalues < self.padj_threshold,
+                 "pvalue_adj": pvalue_adj,
+                 "significant_adj": significant_adj,
+             },
+diff --git a/tests/tools/_distances/test_distance_tests.py b/tests/tools/_distances/test_distance_tests.py
+index ee591578..206b58f5 100644
+--- a/tests/tools/_distances/test_distance_tests.py
++++ b/tests/tools/_distances/test_distance_tests.py
+@@ -42,7 +42,7 @@ def adata() -> AnnData:
+ 
+ @pytest.mark.parametrize("distance", distances)
+ def test_distancetest(adata: AnnData, distance: Metric) -> None:
+-    etest = pt.tl.DistanceTest(distance, n_perms=10, obsm_key="X_pca", alpha=0.05, correction="holm-sidak")
++    etest = pt.tl.DistanceTest(distance, n_perms=10, obsm_key="X_pca", padj_threshold=0.05, correction="holm-sidak")
+     tab = etest(adata, groupby="perturbation", contrast="control")
+ 
+     # Well-defined output

@@ -1,0 +1,68 @@
+version = "1.0"
+
+[task]
+name = "default/scverse__pertpy-1070"
+description = "Add text and HTML representations to DE model classes"
+
+[metadata]
+difficulty = "large"
+category = "bugfix"
+keywords = [
+    "pertpy",
+    "pr_diff",
+]
+
+[metadata.repo2env]
+pipeline = "pr_diff"
+pipeline_version = "0.3.0"
+repo = "scverse/pertpy"
+ref = "fd041e3a9176ebc95848195742e1c042c8ed4bb6"
+reference = "https://github.com/scverse/pertpy/pull/1070"
+source_access = "auto"
+built_at = "2026-11-15T16:41:15.979604+00:00"
+reward_kinds = [
+    "diff_similarity",
+]
+spec_version = "0.2.0"
+content_hash = "sha256:f48ac2be650b0a05e55512e6c5ec5e842e6290138ff59a098813fc1575a54d34"
+
+[metadata.repo2env.pr_diff]
+pr_merged_at = "2026-08-06T14:16:19Z"
+diff_format = "unified"
+context_files = [
+    "docs/api/tools_index.md",
+    "src/pertpy/tools/_differential_gene_expression/_base.py",
+    "src/pertpy/tools/_differential_gene_expression/_edger.py",
+    "src/pertpy/tools/_differential_gene_expression/_pydeseq2.py",
+    "src/pertpy/tools/_differential_gene_expression/_statsmodels.py",
+    "tests/tools/_differential_gene_expression/test_base.py",
+    "tests/tools/_differential_gene_expression/test_statsmodels.py",
+]
+
+[metadata.repo2env.reward_calibration]
+baseline_reward = 0.0
+loc_changed = 137
+difficulty = "large"
+
+[metadata.repo2env.evaluation]
+schema_version = "1"
+status = "unverified"
+stage = "generation"
+reason_codes = [
+    "validation_not_run",
+]
+detail = "Generated task; validation has not been established."
+provenance = "unknown"
+evidence = []
+
+[metadata.repo2env.reproducibility]
+mode = "local_only"
+image_ref = "python:3.12-slim"
+image_tag = "python:3.12-slim"
+image_visibility = "private"
+
+[agent]
+timeout_sec = 1800.0
+
+[verifier]
+timeout_sec = 300.0

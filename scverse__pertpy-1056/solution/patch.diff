@@ -1,0 +1,13 @@
+diff --git a/pertpy/data/_dataloader.py b/pertpy/data/_dataloader.py
+index b80f14fd..3e0520d7 100644
+--- a/pertpy/data/_dataloader.py
++++ b/pertpy/data/_dataloader.py
+@@ -96,7 +96,7 @@ def _download(  # pragma: no cover
+                 fname=output_file_name,
+                 path=str(output_path),
+                 downloader=pooch.HTTPDownloader(
+-                    progressbar=_RichProgress(),
++                    progressbar=_RichProgress(description=f"[red]Downloading {output_file_name}"),
+                     chunk_size=block_size,
+                     timeout=timeout,
+                 ),

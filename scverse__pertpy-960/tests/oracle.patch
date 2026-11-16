@@ -1,0 +1,185 @@
+diff --git a/pertpy/tools/_augur.py b/pertpy/tools/_augur.py
+index 8e31ed27..41590653 100644
+--- a/pertpy/tools/_augur.py
++++ b/pertpy/tools/_augur.py
+@@ -543,10 +543,10 @@ def run_cross_validation(
+         # standardized coefficients with Agresti method
+         # cf. https://think-lab.github.io/d/205/#3
+         if isinstance(self.estimator, LogisticRegression):
+-            for fold, self.estimator in list(zip(range(len(results["estimator"])), results["estimator"], strict=False)):
++            for fold, estimator in list(zip(range(len(results["estimator"])), results["estimator"], strict=False)):
+                 feature_importances["genes"].extend(x.columns.tolist())
+                 feature_importances["feature_importances"].extend(
+-                    (self.estimator.coef_ * self.estimator.coef_.std()).flatten().tolist()
++                    (estimator.coef_ * estimator.coef_.std()).flatten().tolist()
+                 )
+                 feature_importances["subsample_idx"].extend(len(x.columns) * [subsample_idx])
+                 feature_importances["fold"].extend(len(x.columns) * [fold])
+diff --git a/pertpy/tools/_dialogue.py b/pertpy/tools/_dialogue.py
+index 0d1e8568..6257adda 100644
+--- a/pertpy/tools/_dialogue.py
++++ b/pertpy/tools/_dialogue.py
+@@ -192,7 +192,7 @@ def _get_cor_zscores(self, estimate: pd.Series, p_val: pd.Series) -> pd.DataFram
+         Returns:
+             A DataFrame containing the zscores indexed by the estimates.
+         """
+-        p_val.replace(0, min(p for p in p_val if p is not None and p > 0))
++        p_val = p_val.replace(0, min(p for p in p_val if p is not None and p > 0))
+ 
+         # check for all (negative) estimate values if >0 then divide p_value by 2 at same index else substract the p_value/2 from 1
+         # pos_est and neg_est differ in calculation for values as negative estimation is used in neg_est
+diff --git a/pertpy/tools/_perturbation_space/_clustering.py b/pertpy/tools/_perturbation_space/_clustering.py
+index 5ff0a3de..af2ba10a 100644
+--- a/pertpy/tools/_perturbation_space/_clustering.py
++++ b/pertpy/tools/_perturbation_space/_clustering.py
+@@ -78,7 +78,9 @@ def evaluate_clustering(
+ 
+                 if "metric" not in kwargs:
+                     kwargs["metric"] = "euclidean"
+-                if "distances" not in kwargs:
++                if "distances" in kwargs:
++                    distances = kwargs["distances"]
++                else:
+                     distances = pairwise_distances(self.X, metric=kwargs["metric"])
+                 if "sample_size" not in kwargs:
+                     kwargs["sample_size"] = None
+diff --git a/pertpy/tools/_perturbation_space/_comparison.py b/pertpy/tools/_perturbation_space/_comparison.py
+index fe10ff14..a71d365a 100644
+--- a/pertpy/tools/_perturbation_space/_comparison.py
++++ b/pertpy/tools/_perturbation_space/_comparison.py
+@@ -107,6 +107,6 @@ def compare_knn(
+         uq, uq_counts = np.unique(labels[indices], return_counts=True)
+         uq_counts_norm = uq_counts / uq_counts.sum()
+         counts = dict(zip(label_groups, [0.0] * len(label_groups), strict=False))
+-        counts = dict(zip(uq, uq_counts_norm, strict=False))
++        counts.update(zip(uq, uq_counts_norm, strict=False))
+ 
+         return counts
+diff --git a/pertpy/tools/_perturbation_space/_discriminator_classifiers.py b/pertpy/tools/_perturbation_space/_discriminator_classifiers.py
+index 4fb838e7..c5bc408c 100644
+--- a/pertpy/tools/_perturbation_space/_discriminator_classifiers.py
++++ b/pertpy/tools/_perturbation_space/_discriminator_classifiers.py
+@@ -56,7 +56,7 @@ def compute(
+             >>> rcs = pt.tl.LRClassifierSpace()
+             >>> pert_embeddings = rcs.compute(adata, embedding_key="X_pca", target_col="perturbation_name")
+         """
+-        if layer_key is not None and layer_key not in adata.obs.columns:
++        if layer_key is not None and layer_key not in adata.layers:
+             raise ValueError(f"Layer key {layer_key} not found in adata.")
+ 
+         if embedding_key is not None and embedding_key not in adata.obsm:
+@@ -343,7 +343,7 @@ def compute(
+             >>> dcs = pt.tl.MLPClassifierSpace()
+             >>> cell_embeddings = dcs.compute(adata, target_col="perturbation_name")
+         """
+-        if layer_key is not None and layer_key not in adata.obs.columns:
++        if layer_key is not None and layer_key not in adata.layers:
+             raise ValueError(f"Layer key {layer_key} not found in adata.")
+ 
+         if target_col not in adata.obs:
+diff --git a/pertpy/tools/_perturbation_space/_perturbation_space.py b/pertpy/tools/_perturbation_space/_perturbation_space.py
+index cbb7c869..026fdea0 100644
+--- a/pertpy/tools/_perturbation_space/_perturbation_space.py
++++ b/pertpy/tools/_perturbation_space/_perturbation_space.py
+@@ -105,7 +105,7 @@ def compute_control_diff(  # type: ignore
+                 elif num_control > 1:
+                     control_expression = np.mean(adata.obsm[embedding_key][(control_mask & mask), :], axis=0)
+                 else:
+-                    control_expression = np.zeros((1, adata.n_vars))
++                    control_expression = np.zeros((1, adata.obsm[embedding_key].shape[1]))
+                 adata.obsm[new_embedding_key][mask, :] = adata.obsm[embedding_key][mask, :] - control_expression
+ 
+         if (not layer_key and not embedding_key) or all_data:
+@@ -193,10 +193,9 @@ def add(
+         else:
+             adata = self.compute_control_diff(adata, copy=True, all_data=True, target_col=target_col)
+ 
+-        data: dict[str, np.array] = {}
++        data: dict[str, dict[str, np.ndarray]] = {"layers": {}, "embeddings": {}}
+ 
+         for local_layer_key in adata.layers:
+-            data["layers"] = {}
+             control_local = adata[reference_key].layers[local_layer_key].copy()
+             for perturbation in perturbations:
+                 control_local += adata[perturbation].layers[local_layer_key]
+@@ -205,7 +204,6 @@ def add(
+             data["layers"][local_layer_key] = new_data
+ 
+         for local_embedding_key in adata.obsm:
+-            data["embeddings"] = {}
+             control_local = adata[reference_key].obsm[local_embedding_key].copy()
+             for perturbation in perturbations:
+                 control_local += adata[perturbation].obsm[local_embedding_key]
+@@ -234,19 +232,13 @@ def add(
+         new_obs.loc[new_pert_name[:-1]] = new_pert_obs_series
+         new_perturbation.obs = new_obs
+ 
+-        if "layers" in data:
+-            for key in data["layers"]:
+-                key_name = key
+-                if key.endswith("_control_diff"):
+-                    key_name = key.removesuffix("_control_diff")
+-                new_perturbation.layers[key_name] = data["layers"][key]
++        for key, value in data["layers"].items():
++            key_name = key.removesuffix("_control_diff") if key.endswith("_control_diff") else key
++            new_perturbation.layers[key_name] = value
+ 
+-        if "embeddings" in data:
+-            key_name = key
+-            for key in data["embeddings"]:
+-                if key.endswith("_control_diff"):
+-                    key_name = key.removesuffix("_control_diff")
+-                new_perturbation.obsm[key_name] = data["embeddings"][key]
++        for key, value in data["embeddings"].items():
++            key_name = key.removesuffix("_control_diff") if key.endswith("_control_diff") else key
++            new_perturbation.obsm[key_name] = value
+ 
+         new_perturbation.obs[target_col] = new_perturbation.obs_names.astype("category")
+ 
+@@ -304,10 +296,9 @@ def subtract(
+         else:
+             adata = self.compute_control_diff(adata, copy=True, all_data=True, target_col=target_col)
+ 
+-        data: dict[str, np.array] = {}
++        data: dict[str, dict[str, np.ndarray]] = {"layers": {}, "embeddings": {}}
+ 
+         for local_layer_key in adata.layers:
+-            data["layers"] = {}
+             control_local = adata[reference_key].layers[local_layer_key].copy()
+             for perturbation in perturbations:
+                 control_local -= adata[perturbation].layers[local_layer_key]
+@@ -316,7 +307,6 @@ def subtract(
+             data["layers"][local_layer_key] = new_data
+ 
+         for local_embedding_key in adata.obsm:
+-            data["embeddings"] = {}
+             control_local = adata[reference_key].obsm[local_embedding_key].copy()
+             for perturbation in perturbations:
+                 control_local -= adata[perturbation].obsm[local_embedding_key]
+@@ -345,19 +335,13 @@ def subtract(
+         new_obs.loc[new_pert_name[:-1]] = new_pert_obs_series
+         new_perturbation.obs = new_obs
+ 
+-        if "layers" in data:
+-            for key in data["layers"]:
+-                key_name = key
+-                if key.endswith("_control_diff"):
+-                    key_name = key.removesuffix("_control_diff")
+-                new_perturbation.layers[key_name] = data["layers"][key]
+-
+-        if "embeddings" in data:
+-            key_name = key
+-            for key in data["embeddings"]:
+-                if key.endswith("_control_diff"):
+-                    key_name = key.removesuffix("_control_diff")
+-                new_perturbation.obsm[key_name] = data["embeddings"][key]
++        for key, value in data["layers"].items():
++            key_name = key.removesuffix("_control_diff") if key.endswith("_control_diff") else key
++            new_perturbation.layers[key_name] = value
++
++        for key, value in data["embeddings"].items():
++            key_name = key.removesuffix("_control_diff") if key.endswith("_control_diff") else key
++            new_perturbation.obsm[key_name] = value
+ 
+         new_perturbation.obs[target_col] = new_perturbation.obs_names.astype("category")
+ 

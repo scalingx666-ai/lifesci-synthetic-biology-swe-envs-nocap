@@ -1,0 +1,108 @@
+diff --git a/docs/conf.py b/docs/conf.py
+index 23c2b713..eba90be8 100644
+--- a/docs/conf.py
++++ b/docs/conf.py
+@@ -111,6 +111,7 @@
+ autodoc_mock_imports = ["ete4"]
+ intersphinx_mapping = {
+     "anndata": ("https://anndata.readthedocs.io/en/stable/", None),
++    "decoupler": ("https://decoupler.readthedocs.io/en/latest/", None),
+     "mudata": ("https://mudata.readthedocs.io/stable/", None),
+     "matplotlib": ("https://matplotlib.org/stable/", None),
+     "numpy": ("https://numpy.org/doc/stable/", None),
+diff --git a/docs/tutorials/notebooks b/docs/tutorials/notebooks
+index 83cb3eef..7ae61d53 160000
+--- a/docs/tutorials/notebooks
++++ b/docs/tutorials/notebooks
+@@ -1 +1 @@
+-Subproject commit 83cb3eef2ab399bf2448dec5c72f6ad442b02abb
++Subproject commit 7ae61d535361c00e845c39217d513c049f340241
+diff --git a/pertpy/tools/_differential_gene_expression/_base.py b/pertpy/tools/_differential_gene_expression/_base.py
+index 61747968..003c6c39 100644
+--- a/pertpy/tools/_differential_gene_expression/_base.py
++++ b/pertpy/tools/_differential_gene_expression/_base.py
+@@ -83,15 +83,7 @@ def compare_groups(
+             >>> adata = pt.dt.zhang_2021()
+             >>> adata.layers["counts"] = adata.X.copy()
+             >>> ps = pt.tl.PseudobulkSpace()
+-            >>> pdata = ps.compute(
+-            ...     adata,
+-            ...     target_col="Patient",
+-            ...     groups_col="Cluster",
+-            ...     layer_key="counts",
+-            ...     mode="sum",
+-            ...     min_cells=10,
+-            ...     min_counts=1000,
+-            ... )
++            >>> pdata = ps.compute(adata, target_col="Patient", groups_col="Cluster", layer_key="counts", mode="sum")
+             >>> edgr = pt.tl.EdgeR(pdata, design="~Efficacy+Treatment")
+             >>> res_df = edgr.compare_groups(pdata, column="Efficacy", baseline="SD", groups_to_compare=["PR", "PD"])
+         """
+@@ -163,15 +155,7 @@ def plot_volcano(  # pragma: no cover # noqa: D417
+             >>> adata = pt.dt.zhang_2021()
+             >>> adata.layers["counts"] = adata.X.copy()
+             >>> ps = pt.tl.PseudobulkSpace()
+-            >>> pdata = ps.compute(
+-            ...     adata,
+-            ...     target_col="Patient",
+-            ...     groups_col="Cluster",
+-            ...     layer_key="counts",
+-            ...     mode="sum",
+-            ...     min_cells=10,
+-            ...     min_counts=1000,
+-            ... )
++            >>> pdata = ps.compute(adata, target_col="Patient", groups_col="Cluster", layer_key="counts", mode="sum")
+             >>> edgr = pt.tl.EdgeR(pdata, design="~Efficacy+Treatment")
+             >>> edgr.fit()
+             >>> res_df = edgr.test_contrasts(
+@@ -538,15 +522,7 @@ def plot_paired(  # pragma: no cover # noqa: D417
+             >>> adata = pt.dt.zhang_2021()
+             >>> adata.layers["counts"] = adata.X.copy()
+             >>> ps = pt.tl.PseudobulkSpace()
+-            >>> pdata = ps.compute(
+-            ...     adata,
+-            ...     target_col="Patient",
+-            ...     groups_col="Cluster",
+-            ...     layer_key="counts",
+-            ...     mode="sum",
+-            ...     min_cells=10,
+-            ...     min_counts=1000,
+-            ... )
++            >>> pdata = ps.compute(adata, target_col="Patient", groups_col="Cluster", layer_key="counts", mode="sum")
+             >>> edgr = pt.tl.EdgeR(pdata, design="~Efficacy+Treatment")
+             >>> edgr.fit()
+             >>> res_df = edgr.test_contrasts(
+@@ -704,15 +680,7 @@ def plot_fold_change(  # pragma: no cover # noqa: D417
+             >>> adata = pt.dt.zhang_2021()
+             >>> adata.layers["counts"] = adata.X.copy()
+             >>> ps = pt.tl.PseudobulkSpace()
+-            >>> pdata = ps.compute(
+-            ...     adata,
+-            ...     target_col="Patient",
+-            ...     groups_col="Cluster",
+-            ...     layer_key="counts",
+-            ...     mode="sum",
+-            ...     min_cells=10,
+-            ...     min_counts=1000,
+-            ... )
++            >>> pdata = ps.compute(adata, target_col="Patient", groups_col="Cluster", layer_key="counts", mode="sum")
+             >>> edgr = pt.tl.EdgeR(pdata, design="~Efficacy+Treatment")
+             >>> edgr.fit()
+             >>> res_df = edgr.test_contrasts(
+@@ -791,15 +759,7 @@ def plot_multicomparison_fc(  # pragma: no cover # noqa: D417
+             >>> adata = pt.dt.zhang_2021()
+             >>> adata.layers["counts"] = adata.X.copy()
+             >>> ps = pt.tl.PseudobulkSpace()
+-            >>> pdata = ps.compute(
+-            ...     adata,
+-            ...     target_col="Patient",
+-            ...     groups_col="Cluster",
+-            ...     layer_key="counts",
+-            ...     mode="sum",
+-            ...     min_cells=10,
+-            ...     min_counts=1000,
+-            ... )
++            >>> pdata = ps.compute(adata, target_col="Patient", groups_col="Cluster", layer_key="counts", mode="sum")
+             >>> edgr = pt.tl.EdgeR(pdata, design="~Efficacy+Treatment")
+             >>> res_df = edgr.compare_groups(pdata, column="Efficacy", baseline="SD", groups_to_compare=["PR", "PD"])
+             >>> edgr.plot_multicomparison_fc(res_df)
