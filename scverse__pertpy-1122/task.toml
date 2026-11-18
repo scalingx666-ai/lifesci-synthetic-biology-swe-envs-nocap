@@ -33,7 +33,6 @@ context_files = [
     "src/pertpy/tools/_differential_gene_expression/_simple_tests.py",
     "tests/tools/_differential_gene_expression/test_simple_tests.py",
 ]
-bootstrap_image = "python:3.12-slim"
 
 [metadata.repo2env.reward_calibration]
 baseline_reward = 0.0
@@ -52,15 +51,10 @@ provenance = "unknown"
 evidence = []
 
 [metadata.repo2env.reproducibility]
-mode = "inline_dockerfile"
+mode = "local_only"
 image_ref = "python:3.12-slim"
 image_tag = "python:3.12-slim"
-image_visibility = "public"
-pushed_at = "2026-11-16T15:52:56.709107+00:00"
-pushed_by = "scalingX"
-inline_recipe_sha256 = "sha256:37f7048e056be379acded7caca45ef3c882c8477bf218b5348f41cd246afdb59"
-inline_recipe_lines = 37
-inline_recipe_source = "user_dockerfile"
+image_visibility = "private"
 
 [agent]
 timeout_sec = 1800.0

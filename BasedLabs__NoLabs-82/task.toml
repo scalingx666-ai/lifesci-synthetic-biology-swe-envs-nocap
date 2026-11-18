@@ -33,7 +33,6 @@ context_files = [
     "compose.yaml",
     "frontend/src/features/workflow/components/jobs/DiffDockJob.vue",
 ]
-bootstrap_image = "python:3.12-slim"
 
 [metadata.repo2env.reward_calibration]
 baseline_reward = 0.0
@@ -52,15 +51,10 @@ provenance = "unknown"
 evidence = []
 
 [metadata.repo2env.reproducibility]
-mode = "inline_dockerfile"
+mode = "local_only"
 image_ref = "python:3.12-slim"
 image_tag = "python:3.12-slim"
-image_visibility = "public"
-pushed_at = "2026-11-16T15:52:56.675685+00:00"
-pushed_by = "scalingX"
-inline_recipe_sha256 = "sha256:526e66ad7c4848ef46fe141933479b56835a4a5a02135504721a27b475b991a4"
-inline_recipe_lines = 37
-inline_recipe_source = "user_dockerfile"
+image_visibility = "private"
 
 [agent]
 timeout_sec = 1800.0

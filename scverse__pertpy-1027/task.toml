@@ -36,7 +36,6 @@ context_files = [
     "pertpy/metadata/_moa.py",
     "tests/metadata/test_metadata.py",
 ]
-bootstrap_image = "python:3.12-slim"
 
 [metadata.repo2env.reward_calibration]
 baseline_reward = 0.0
@@ -55,15 +54,10 @@ provenance = "unknown"
 evidence = []
 
 [metadata.repo2env.reproducibility]
-mode = "inline_dockerfile"
+mode = "local_only"
 image_ref = "python:3.12-slim"
 image_tag = "python:3.12-slim"
-image_visibility = "public"
-pushed_at = "2026-11-16T15:52:56.684597+00:00"
-pushed_by = "scalingX"
-inline_recipe_sha256 = "sha256:afd74db9fac58a78616b35be073693f25d1bb30dc41abc400b7dd9613a5c1672"
-inline_recipe_lines = 37
-inline_recipe_source = "user_dockerfile"
+image_visibility = "private"
 
 [agent]
 timeout_sec = 1800.0

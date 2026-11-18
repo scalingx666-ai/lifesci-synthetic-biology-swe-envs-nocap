@@ -35,7 +35,6 @@ context_files = [
     ".github/workflows/test.yml",
     ".github/workflows/test_tutorials.yml",
 ]
-bootstrap_image = "python:3.12-slim"
 
 [metadata.repo2env.reward_calibration]
 baseline_reward = 0.0
@@ -54,15 +53,10 @@ provenance = "unknown"
 evidence = []
 
 [metadata.repo2env.reproducibility]
-mode = "inline_dockerfile"
+mode = "local_only"
 image_ref = "python:3.12-slim"
 image_tag = "python:3.12-slim"
-image_visibility = "public"
-pushed_at = "2026-11-16T15:52:56.734323+00:00"
-pushed_by = "scalingX"
-inline_recipe_sha256 = "sha256:7ea21a660d82de2dbc2a00c8ac6465bfb6ebbe369ce5e63843d62ba3d1f532ea"
-inline_recipe_lines = 37
-inline_recipe_source = "user_dockerfile"
+image_visibility = "private"
 
 [agent]
 timeout_sec = 1800.0

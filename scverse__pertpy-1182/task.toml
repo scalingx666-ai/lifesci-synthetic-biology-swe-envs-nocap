@@ -34,7 +34,6 @@ context_files = [
     "docs/conf.py",
     "pyproject.toml",
 ]
-bootstrap_image = "python:3.12-slim"
 
 [metadata.repo2env.reward_calibration]
 baseline_reward = 0.0
@@ -53,15 +52,10 @@ provenance = "unknown"
 evidence = []
 
 [metadata.repo2env.reproducibility]
-mode = "inline_dockerfile"
+mode = "local_only"
 image_ref = "python:3.12-slim"
 image_tag = "python:3.12-slim"
-image_visibility = "public"
-pushed_at = "2026-11-16T15:52:56.729797+00:00"
-pushed_by = "scalingX"
-inline_recipe_sha256 = "sha256:3ff2672cb323cb02c603494301f56aecd7d003d2ef58897d4909dbd11c5d6d69"
-inline_recipe_lines = 37
-inline_recipe_source = "user_dockerfile"
+image_visibility = "private"
 
 [agent]
 timeout_sec = 1800.0
