@@ -61,3 +61,13 @@ Hugging Face by repo2rlenv push.
   publishing need neither Docker nor an LLM key.
 - Hardcoded provider keys found in upstream PR diffs were redacted for public
   release. Licenses follow each source repository; generated with Repo2RLEnv.
+
+## Snapshot scope
+
+This release is a **partial snapshot** of an unfinished generation run.
+
+- Generation-complete flag: generation_complete_expansion.flag - **ABSENT** (not faked)
+- Bank progress at snapshot: **53477 / 100000** tasks (53.5%)
+- This domain: **189** tasks from **3** repositories
+
+See PARTIAL_SNAPSHOT.md for the full statement.

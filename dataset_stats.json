@@ -12,5 +12,19 @@
     "scverse/pertpy": 171
   },
   "build": "expansion",
-  "task_cap": "unlimited"
+  "task_cap": "unlimited",
+  "snapshot": {
+    "publish_mode": "partial_snapshot",
+    "generation_complete": false,
+    "generation_complete_flag": "generation_complete_expansion.flag (ABSENT - deliberately not faked)",
+    "snapshot_local": "2026-11-19 00:55:36 UTC+08:00",
+    "bank_live_task_tomls_at_snapshot": 53477,
+    "bank_repos_checkpointed_at_snapshot": 1348,
+    "bank_repos_total_at_snapshot": 1372,
+    "target_task_goal": 100000,
+    "target_fraction_reached": 0.53477,
+    "domain_tasks": 189,
+    "domain_repos_with_tasks": 3,
+    "note": "PARTIAL snapshot of an unfinished real-PR generation run. Not the 100k dataset; further tasks land in later releases. Nothing is fabricated and zero-yield repos are listed, not padded."
+  }
 }
